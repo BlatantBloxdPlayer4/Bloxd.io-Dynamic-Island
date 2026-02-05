@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Bloxd.io Dynamic Island (FPS / Ping / Time / CPU / RAM) + ClickGUI (and more!)
+// @name         Bloxd.io Dynamic Island (FPS / Ping / Time / CPU / RAM) + ClickGUI (Draggable, Text Colour, Glow Ring) — Fix Side-Stat Flicker
 // @namespace    https://github.com/BlatantBloxdPlayer4
-// @version      1.5.0
-// @description  Dynamic Island for Bloxd.io (clickgui as well :D)
+// @version      1.5.1
+// @description  Dynamic island overlay for bloxd.io with CPU/RAM shown both on the island and in the ArrayList side panel; draggable island; custom ClickGUI (open with Right Shift). Fixed bug where CPU/RAM sidebar stats briefly reappear when disabled. Persisted in localStorage.
 // @match        https://bloxd.io/*
 // @match        http://bloxd.io/*
 // @grant        none
@@ -44,7 +44,7 @@
     gradientEnabled: true, // ring glow enabled
     colorA: '#8a2be2',     // ring colour A
     colorB: '#00d4ff',     // ring colour B
-    gradientSpeed: 8,      
+    gradientSpeed: 8,      // not used for rotation anymore, kept for pulse if wanted
     gradientThickness: 8,
     updatePingEvery: 3000,
     fpsSmoothing: 6,
@@ -204,7 +204,7 @@
   const smallDot = document.createElement('div'); smallDot.style.width = '10px'; smallDot.style.height = '10px'; smallDot.style.borderRadius = '50%'; smallDot.style.background = '#7fffd4'; smallDot.style.opacity = '0.85'; right.appendChild(smallDot);
 
   /* ------------------------
-     STYLE
+     STYLE (combines original + provided ClickGUI)
      ------------------------ */
   const guiCss = `
     /* Dynamic Island styles */
@@ -274,7 +274,7 @@
   styleTag.textContent = guiCss;
 
   /* ------------------------
-     Metrics overlay: FPS / PING / TIME / CPU / RAM
+     CORE METRICS: FPS / PING / TIME / CPU / RAM
      ------------------------ */
   let frameTimes = [];
   let rafId = null;
@@ -311,6 +311,7 @@
     rafId = requestAnimationFrame(tickFPS);
   }
 
+  // CPU percent updater - only write to sidebar element when CPU stat is enabled
   setInterval(() => {
     const now = performance.now();
     const windowMs = 1000;
@@ -318,10 +319,19 @@
     const recent = procSamples.filter(s => s.t >= cutoff);
     const busy = recent.reduce((s, x) => s + x.duration, 0);
     cpuPercent = Math.min(100, Math.round((busy / windowMs) * 100));
-    if (settings.showCPU) cpuEl.textContent = `CPU: ${cpuPercent}%`;
-    // update sidebar stat if present
+    if (settings.showCPU) {
+      cpuEl.textContent = `CPU: ${cpuPercent}%`;
+    } else {
+      cpuEl.textContent = ''; // keep island element cleared
+    }
+
+    // update sidebar stat if it exists AND setting enabled
     const arrCpu = document.getElementById('bloxdi-array-cpu');
-    if (arrCpu) arrCpu.textContent = `CPU: ${cpuPercent}%`;
+    if (arrCpu) {
+      arrCpu.textContent = settings.showCPU ? `CPU: ${cpuPercent}%` : '';
+      // If disabled, also remove element entirely to avoid intermittent flashes
+      if (!settings.showCPU) arrCpu.remove();
+    }
   }, 700);
 
   function formatMB(bytes) { return (bytes / (1024 * 1024)).toFixed(1); }
@@ -335,18 +345,27 @@
           const txt = percent !== null ? `${formatMB(used)}MB / ${formatMB(total)}MB (${percent}%)` : `${formatMB(used)}MB`;
           ramEl.textContent = `RAM: ${txt}`;
           lastRamText = txt;
+        } else {
+          ramEl.textContent = '';
+          lastRamText = '--';
         }
       } catch (e) {
         if (settings.showRAM) { ramEl.textContent = 'RAM: --'; lastRamText = '--'; }
+        else { ramEl.textContent = ''; lastRamText = '--'; }
       }
     } else if (navigator && 'deviceMemory' in navigator) {
       if (settings.showRAM) { ramEl.textContent = `RAM: ${navigator.deviceMemory} GB (approx)`; lastRamText = `${navigator.deviceMemory} GB (approx)`; }
+      else { ramEl.textContent = ''; lastRamText = '--'; }
     } else {
       if (settings.showRAM) { ramEl.textContent = 'RAM: --'; lastRamText = '--'; }
+      else { ramEl.textContent = ''; lastRamText = '--'; }
     }
-    // update sidebar stat if present
+    // update sidebar stat if present and setting enabled
     const arrRam = document.getElementById('bloxdi-array-ram');
-    if (arrRam) arrRam.textContent = `RAM: ${lastRamText}`;
+    if (arrRam) {
+      arrRam.textContent = settings.showRAM ? `RAM: ${lastRamText}` : '';
+      if (!settings.showRAM) arrRam.remove();
+    }
   }
 
   async function doPing() {
@@ -448,7 +467,7 @@
   window.addEventListener('pointercancel', endDrag);
 
   /* ------------------------
-     CLICKGUI (IDK why)
+     CLICKGUI: replaced with provided fake-gui, adapted to change island settings
      ------------------------ */
   const gui = document.createElement('div');
   gui.className = 'fake-gui hidden'; // hidden by default
@@ -461,7 +480,8 @@
   const themeClasses = { 'Dark Orange': '', 'Blue Neon': 'theme-blue' };
   const themes = ['Dark Orange', 'Blue Neon'];
 
-  // updateArrayList now also ensures CPU/RAM side stats are present and updated
+  // updateArrayList now only creates CPU/RAM side stat elements when the corresponding setting is enabled,
+  // ensuring they are removed entirely when disabled (prevents flicker)
   function updateArrayList() {
     arrayList.innerHTML = '';
     const entries = [];
@@ -484,27 +504,31 @@
     spacer.style.height = '6px';
     arrayList.appendChild(spacer);
 
-    // Add CPU stat line
-    const cpuLine = document.createElement('div');
-    cpuLine.id = 'bloxdi-array-cpu';
-    cpuLine.className = 'arraylist-entry stat';
-    cpuLine.textContent = settings.showCPU ? `CPU: ${cpuPercent}%` : '';
-    arrayList.appendChild(cpuLine);
+    // Add CPU stat line only if enabled
+    if (settings.showCPU) {
+      const cpuLine = document.createElement('div');
+      cpuLine.id = 'bloxdi-array-cpu';
+      cpuLine.className = 'arraylist-entry stat';
+      cpuLine.textContent = `CPU: ${cpuPercent}%`;
+      arrayList.appendChild(cpuLine);
+    }
 
-    // Add RAM stat line
-    const ramLine = document.createElement('div');
-    ramLine.id = 'bloxdi-array-ram';
-    ramLine.className = 'arraylist-entry stat';
-    ramLine.textContent = settings.showRAM ? `RAM: ${lastRamText}` : '';
-    arrayList.appendChild(ramLine);
+    // Add RAM stat line only if enabled
+    if (settings.showRAM) {
+      const ramLine = document.createElement('div');
+      ramLine.id = 'bloxdi-array-ram';
+      ramLine.className = 'arraylist-entry stat';
+      ramLine.textContent = `RAM: ${lastRamText}`;
+      arrayList.appendChild(ramLine);
+    }
   }
 
-  // Columns for clickgui
+  // Column definitions (module tabs) - "Configs" renamed to "Text colour"
   const columns = {
     "General": ["Enabled", "Show Title"],
     "Elements": ["FPS", "Ping", "CPU", "RAM", "Time", "Icon"],
     "Visuals": ["Opacity", "Blur", "Radius", "Size", "Height"],
-    "Gradient": ["Ring Enabled", "Color A", "Color B", "Speed"],
+    "Gradient": ["Ring Enabled", "Color A", "Color B", "Thickness"],
     "Movement": ["Lock", "Center", "Reset"],
     "Text colour": ["Text Gradient", "Text Color A", "Text Color B"]
   };
@@ -723,7 +747,7 @@
     if (settings.iconUrl) {
       iconImg.src = settings.iconUrl; iconImg.style.display = 'block'; iconEmoji.style.display = 'none';
       iconImg.onerror = () => { iconImg.style.display = 'none'; iconEmoji.style.display = 'flex'; };
-    } else { iconImg.style.display = 'none'; iconEmoji.style.display = 'flex'; iconEmoji.textContent = settings.iconEmoji || DEFAULTS.iconEmoji; }
+    } else { iconImg.style.display = 'none'; iconEmoji.style.display = 'flex'; iconEmoji.style.color = settings.textColor; iconEmoji.textContent = settings.iconEmoji || DEFAULTS.iconEmoji; }
 
     // Glow ring: radial gradient blurred (no spin)
     ring.style.width = `${settings.size + settings.gradientThickness * 2}px`;
@@ -786,12 +810,11 @@
   }
 
   function buildDynamicStyles() {
-    // Nothing additional needed beyond styleTag, float animation uses settings.floatAmount already in CSS string.
-    // We could rebuild styleTag if floatAmount changes, but it's not critical.
+    // Nothing additional needed beyond the existing styleTag content for this script
   }
 
   /* ------------------------
-     START
+     LIFECYCLE START
      ------------------------ */
   buildDynamicStyles();
   applyAllSettingsToUI();
@@ -833,7 +856,5 @@
   ramEl.textContent = 'RAM: --';
   timeEl.textContent = 'Time: 0s';
   updateArrayList();
-
-    // too many comments :sob: :pray:
 
 })();
