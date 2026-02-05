@@ -1,0 +1,839 @@
+// ==UserScript==
+// @name         Bloxd.io Dynamic Island (FPS / Ping / Time / CPU / RAM) + ClickGUI (and more!)
+// @namespace    https://github.com/BlatantBloxdPlayer4
+// @version      1.5.0
+// @description  Dynamic Island for Bloxd.io (clickgui as well :D)
+// @match        https://bloxd.io/*
+// @match        http://bloxd.io/*
+// @grant        none
+// ==/UserScript==
+
+(() => {
+  'use strict';
+
+  /* ------------------------
+     STORAGE & DEFAULTS
+     ------------------------ */
+  const STORAGE_KEY = 'bloxddynamicisland_settings_v1';
+  const DEFAULTS = {
+    enabled: true,
+    showFPS: true,
+    showPing: true,
+    showTime: true,
+    showIcon: true,
+    showCPU: true,
+    showRAM: true,
+    iconUrl: '',
+    iconEmoji: '🎮',
+    islandOpacity: 0.75,
+    islandBlur: 8,
+    islandBackground: 'rgba(0,0,0,0.35)',
+    // fallback single text color (used when gradient disabled)
+    textColor: '#ffffff',
+    // new: two text colours (user requested)
+    textColorA: '#ffffff',
+    textColorB: '#ff9248',
+    textGradientEnabled: false,
+
+    fontFamily: 'Inter, Roboto, system-ui, Arial, sans-serif',
+    borderRadius: 18,
+    size: 240,
+    height: 56,
+    floatAnimation: true,
+    floatAmount: 6,
+    gradientEnabled: true, // ring glow enabled
+    colorA: '#8a2be2',     // ring colour A
+    colorB: '#00d4ff',     // ring colour B
+    gradientSpeed: 8,      
+    gradientThickness: 8,
+    updatePingEvery: 3000,
+    fpsSmoothing: 6,
+
+    // Position / Movement
+    centered: true,
+    posX: null,
+    posY: 18,
+    locked: false
+  };
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return { ...DEFAULTS };
+      const parsed = JSON.parse(raw);
+      return { ...DEFAULTS, ...parsed };
+    } catch (e) {
+      console.error('Failed to load settings, using defaults', e);
+      return { ...DEFAULTS };
+    }
+  }
+  function saveSettings() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    applyAllSettingsToUI();
+  }
+
+  let settings = loadSettings();
+
+  /* ------------------------
+     BUILD ISLAND DOM
+     ------------------------ */
+  const root = document.createElement('div');
+  root.id = 'bloxdi-root';
+  root.style.position = 'fixed';
+  root.style.left = '50%';
+  root.style.top = `${settings.posY}px`;
+  root.style.transform = 'translateX(-50%)';
+  root.style.zIndex = '999999';
+  root.style.pointerEvents = 'auto';
+  root.style.display = settings.enabled ? 'block' : 'none';
+  document.body.appendChild(root);
+
+  const styleTag = document.createElement('style');
+  styleTag.id = 'bloxdi-styles';
+  document.head.appendChild(styleTag);
+
+  const island = document.createElement('div');
+  island.id = 'bloxdi-island';
+  island.setAttribute('role', 'status');
+  island.style.width = `${settings.size}px`;
+  island.style.height = `${settings.height}px`;
+  island.style.display = 'flex';
+  island.style.alignItems = 'center';
+  island.style.justifyContent = 'space-between';
+  island.style.padding = '8px 14px';
+  island.style.boxSizing = 'border-box';
+  island.style.backdropFilter = `blur(${settings.islandBlur}px)`;
+  island.style.background = settings.islandBackground;
+  island.style.opacity = `${settings.islandOpacity}`;
+  island.style.borderRadius = `${settings.borderRadius}px`;
+  island.style.color = settings.textColor;
+  island.style.fontFamily = settings.fontFamily;
+  island.style.boxShadow = '0 6px 22px rgba(0,0,0,0.35)';
+  island.style.cursor = 'grab';
+  island.style.transition = 'opacity 200ms, transform 200ms';
+  island.style.position = 'relative';
+  root.appendChild(island);
+
+  // ring = glow (no rotation)
+  const ring = document.createElement('div');
+  ring.id = 'bloxdi-ring';
+  ring.style.position = 'absolute';
+  ring.style.left = '50%';
+  ring.style.top = '50%';
+  ring.style.transform = 'translate(-50%,-50%)';
+  ring.style.width = `${settings.size + settings.gradientThickness * 2}px`;
+  ring.style.height = `${settings.height + settings.gradientThickness * 2}px`;
+  ring.style.borderRadius = `${settings.borderRadius + settings.gradientThickness}px`;
+  // glow-specific defaults (will be updated in applyAllSettingsToUI)
+  ring.style.filter = 'blur(14px)';
+  ring.style.pointerEvents = 'none';
+  ring.style.zIndex = '-1';
+  root.appendChild(ring);
+
+  const left = document.createElement('div');
+  left.id = 'bloxdi-left';
+  left.style.display = 'flex';
+  left.style.alignItems = 'center';
+  left.style.gap = '10px';
+  island.appendChild(left);
+
+  const iconWrap = document.createElement('div');
+  iconWrap.id = 'bloxdi-iconwrap';
+  iconWrap.style.width = `${settings.height - 16}px`;
+  iconWrap.style.height = `${settings.height - 16}px`;
+  iconWrap.style.flex = '0 0 auto';
+  iconWrap.style.display = settings.showIcon ? 'flex' : 'none';
+  iconWrap.style.alignItems = 'center';
+  iconWrap.style.justifyContent = 'center';
+  iconWrap.style.overflow = 'hidden';
+  iconWrap.style.borderRadius = `${Math.max(6, settings.borderRadius - 6)}px`;
+  iconWrap.style.background = 'rgba(255,255,255,0.06)';
+  iconWrap.style.fontSize = `${Math.max(16, (settings.height - 24) / 2)}px`;
+  iconWrap.style.color = settings.textColor;
+  left.appendChild(iconWrap);
+
+  const iconImg = document.createElement('img');
+  iconImg.id = 'bloxdi-iconimg';
+  iconImg.style.maxWidth = '100%';
+  iconImg.style.maxHeight = '100%';
+  iconImg.style.objectFit = 'cover';
+  iconImg.style.display = 'none';
+  iconWrap.appendChild(iconImg);
+
+  const iconEmoji = document.createElement('div');
+  iconEmoji.id = 'bloxdi-iconemoji';
+  iconEmoji.style.display = 'flex';
+  iconEmoji.style.alignItems = 'center';
+  iconEmoji.style.justifyContent = 'center';
+  iconEmoji.style.fontSize = '20px';
+  iconEmoji.textContent = settings.iconEmoji;
+  iconWrap.appendChild(iconEmoji);
+
+  const center = document.createElement('div');
+  center.id = 'bloxdi-center';
+  center.style.display = 'flex';
+  center.style.flexDirection = 'column';
+  center.style.flex = '1 1 auto';
+  center.style.gap = '2px';
+  island.appendChild(center);
+
+  const title = document.createElement('div');
+  title.id = 'bloxdi-title';
+  title.style.fontSize = '12px';
+  title.style.opacity = '0.9';
+  title.style.fontWeight = '600';
+  title.textContent = 'Bloxd Dynamic Island';
+  center.appendChild(title);
+
+  const subtitleRow = document.createElement('div');
+  subtitleRow.id = 'bloxdi-subrow';
+  subtitleRow.style.display = 'flex';
+  subtitleRow.style.gap = '12px';
+  subtitleRow.style.alignItems = 'center';
+  subtitleRow.style.fontSize = '13px';
+  subtitleRow.style.opacity = '0.95';
+  center.appendChild(subtitleRow);
+
+  const fpsEl = document.createElement('div'); fpsEl.id = 'bloxdi-fps'; fpsEl.textContent = 'FPS: --'; subtitleRow.appendChild(fpsEl);
+  const pingEl = document.createElement('div'); pingEl.id = 'bloxdi-ping'; pingEl.textContent = 'Ping: --'; subtitleRow.appendChild(pingEl);
+  const cpuEl = document.createElement('div'); cpuEl.id = 'bloxdi-cpu'; cpuEl.textContent = 'CPU: --%'; subtitleRow.appendChild(cpuEl);
+  const ramEl = document.createElement('div'); ramEl.id = 'bloxdi-ram'; ramEl.textContent = 'RAM: --'; subtitleRow.appendChild(ramEl);
+  const timeEl = document.createElement('div'); timeEl.id = 'bloxdi-time'; timeEl.textContent = 'Time: 0s'; subtitleRow.appendChild(timeEl);
+
+  const right = document.createElement('div'); right.id = 'bloxdi-right'; right.style.flex = '0 0 auto'; right.style.display = 'flex'; right.style.alignItems = 'center'; right.style.gap = '8px'; island.appendChild(right);
+  const smallDot = document.createElement('div'); smallDot.style.width = '10px'; smallDot.style.height = '10px'; smallDot.style.borderRadius = '50%'; smallDot.style.background = '#7fffd4'; smallDot.style.opacity = '0.85'; right.appendChild(smallDot);
+
+  /* ------------------------
+     STYLE
+     ------------------------ */
+  const guiCss = `
+    /* Dynamic Island styles */
+    #bloxdi-root * { box-sizing: border-box; }
+    #bloxdi-island { user-select: none; -webkit-user-select: none; }
+    #bloxdi-island.float-anim { animation: bloxdi-float ${Math.max(2, settings.gradientSpeed / 2)}s ease-in-out infinite; }
+    @keyframes bloxdi-float { 0% { transform: translateY(0); } 50% { transform: translateY(-${settings.floatAmount}px); } 100% { transform: translateY(0); } }
+
+    /* ClickGUI (adapted) */
+    .fake-gui {
+        font-family: 'Arial', sans-serif;
+        display: flex;
+        flex-direction: row;
+        position: fixed;
+        top: 50px;
+        left: 50px;
+        z-index: 1000002;
+        pointer-events: auto;
+    }
+    .gui-column {
+        background: var(--bg-color);
+        border: 1px solid var(--accent);
+        margin-right: 5px;
+        width: 160px;
+        color: white;
+        position: absolute;
+        padding: 0;
+        user-select: none;
+        border-radius:8px;
+        overflow: hidden;
+    }
+    .gui-header {
+        background: #2a2a2a;
+        padding: 8px;
+        cursor: move;
+        color: var(--accent);
+        font-size: 14px;
+        font-weight: bold;
+    }
+    .gui-content {
+        padding: 8px;
+        background: rgba(0,0,0,0.12);
+    }
+    .gui-option {
+        cursor: pointer;
+        padding: 3px 0;
+        font-size: 13px;
+    }
+    .gui-option.enabled {
+        color: var(--accent);
+    }
+    .gui-option:hover {
+        background: rgba(255, 255, 255, 0.03);
+    }
+    .slider-container { margin-top: 5px; }
+    .slider-label { font-size: 12px; margin-bottom: 4px; color: #ddd; }
+    .slider { width: 100%; }
+    .arraylist { position: fixed; top: 10px; right: 10px; text-align: right; font-family: Arial, sans-serif; font-size: 14px; color: var(--accent); z-index: 1000001; pointer-events: none; }
+    .arraylist-entry { margin: 2px 0; }
+    .arraylist-entry.stat { opacity: 0.95; font-weight: 600; }
+    .theme-switcher { padding: 5px; width: 100%; background: #222; color: white; border-top: 1px solid var(--accent); font-size: 12px; }
+    .hidden { display: none; }
+    :root { --bg-color: rgba(40, 40, 40, 0.95); --accent: #ff9248; }
+    .theme-blue { --bg-color: rgba(20, 20, 40, 0.95); --accent: #00ffff; }
+    @media (max-width:560px) { .fake-gui { transform: scale(0.9); } }
+  `;
+  styleTag.textContent = guiCss;
+
+  /* ------------------------
+     Metrics overlay: FPS / PING / TIME / CPU / RAM
+     ------------------------ */
+  let frameTimes = [];
+  let rafId = null;
+  let pingTimer = null;
+  let cpuPercent = 0;
+  let procSamples = [];
+  let lastRamText = '--';
+
+  function tickFPS(ts) {
+    const procStart = performance.now();
+
+    if (frameTimes.length > 0) {
+      const last = frameTimes[frameTimes.length - 1].t;
+      const dt = ts - last;
+      frameTimes.push({ t: ts, dt });
+    } else {
+      frameTimes.push({ t: ts, dt: 0 });
+    }
+    while (frameTimes.length > settings.fpsSmoothing * 60) frameTimes.shift();
+
+    const use = frameTimes.slice(-Math.max(5, settings.fpsSmoothing));
+    const avgDt = use.reduce((s, x) => s + (x.dt || 0), 0) / Math.max(1, use.length);
+    const fpsValue = avgDt > 0 ? Math.round(1000 / avgDt) : 0;
+    if (settings.showFPS) fpsEl.textContent = `FPS: ${fpsValue}`;
+
+    frameTimes[frameTimes.length - 1].t = ts;
+
+    const procEnd = performance.now();
+    const duration = Math.max(0, procEnd - procStart);
+    procSamples.push({ t: procEnd, duration });
+    const cutoff = performance.now() - 2000;
+    while (procSamples.length && procSamples[0].t < cutoff) procSamples.shift();
+
+    rafId = requestAnimationFrame(tickFPS);
+  }
+
+  setInterval(() => {
+    const now = performance.now();
+    const windowMs = 1000;
+    const cutoff = now - windowMs;
+    const recent = procSamples.filter(s => s.t >= cutoff);
+    const busy = recent.reduce((s, x) => s + x.duration, 0);
+    cpuPercent = Math.min(100, Math.round((busy / windowMs) * 100));
+    if (settings.showCPU) cpuEl.textContent = `CPU: ${cpuPercent}%`;
+    // update sidebar stat if present
+    const arrCpu = document.getElementById('bloxdi-array-cpu');
+    if (arrCpu) arrCpu.textContent = `CPU: ${cpuPercent}%`;
+  }, 700);
+
+  function formatMB(bytes) { return (bytes / (1024 * 1024)).toFixed(1); }
+  function updateRAM() {
+    if (performance && performance.memory) {
+      try {
+        const used = performance.memory.usedJSHeapSize;
+        const total = performance.memory.jsHeapSizeLimit;
+        const percent = total ? Math.round((used / total) * 100) : null;
+        if (settings.showRAM) {
+          const txt = percent !== null ? `${formatMB(used)}MB / ${formatMB(total)}MB (${percent}%)` : `${formatMB(used)}MB`;
+          ramEl.textContent = `RAM: ${txt}`;
+          lastRamText = txt;
+        }
+      } catch (e) {
+        if (settings.showRAM) { ramEl.textContent = 'RAM: --'; lastRamText = '--'; }
+      }
+    } else if (navigator && 'deviceMemory' in navigator) {
+      if (settings.showRAM) { ramEl.textContent = `RAM: ${navigator.deviceMemory} GB (approx)`; lastRamText = `${navigator.deviceMemory} GB (approx)`; }
+    } else {
+      if (settings.showRAM) { ramEl.textContent = 'RAM: --'; lastRamText = '--'; }
+    }
+    // update sidebar stat if present
+    const arrRam = document.getElementById('bloxdi-array-ram');
+    if (arrRam) arrRam.textContent = `RAM: ${lastRamText}`;
+  }
+
+  async function doPing() {
+    const urlCandidates = [ location.origin + '/favicon.ico', location.origin + '/', location.href.split('?')[0] ];
+    const url = urlCandidates[0] || location.origin;
+    try {
+      const start = performance.now();
+      await fetch(url + (url.includes('?') ? '&' : '?') + '_b=' + Date.now(), { cache: 'no-store', method: 'GET' });
+      const end = performance.now();
+      const pingValue = Math.max(0, Math.round(end - start));
+      if (settings.showPing) pingEl.textContent = `Ping: ${pingValue} ms`;
+    } catch (err) {
+      if (settings.showPing) pingEl.textContent = 'Ping: --';
+    }
+  }
+
+  function startPingLoop() {
+    if (pingTimer) clearInterval(pingTimer);
+    doPing();
+    pingTimer = setInterval(doPing, Math.max(500, settings.updatePingEvery));
+  }
+
+  let startTime = performance.now();
+  function updateSessionTime() {
+    const elapsed = performance.now() - startTime;
+    const sec = Math.floor(elapsed / 1000);
+    const hh = Math.floor(sec / 3600);
+    const mm = Math.floor((sec % 3600) / 60);
+    const ss = sec % 60;
+    let txt = `${ss}s`;
+    if (hh > 0) txt = `${hh}h ${mm}m ${ss}s`;
+    else if (mm > 0) txt = `${mm}m ${ss}s`;
+    if (settings.showTime) timeEl.textContent = `Time: ${txt}`;
+  }
+
+  /* ------------------------
+     POSITION / DRAGGING (island)
+     ------------------------ */
+  function applyPositionToRoot() {
+    if (settings.centered) {
+      root.style.left = '50%';
+      root.style.transform = 'translateX(-50%)';
+      root.style.top = `${settings.posY}px`;
+    } else {
+      if (settings.posX === null) root.style.left = '50%', root.style.transform = 'translateX(-50%)';
+      else { root.style.left = `${Math.round(settings.posX)}px`; root.style.transform = 'none'; }
+      root.style.top = `${Math.round(settings.posY)}px`;
+    }
+    island.style.cursor = settings.locked ? 'default' : 'grab';
+  }
+
+  let dragging = false, dragPointerId = null, dragOffsetX = 0, dragOffsetY = 0;
+  function startDrag(e) {
+    if (settings.locked) return;
+    if (e.isPrimary === false) return;
+    const path = e.composedPath ? e.composedPath() : (e.path || []);
+    if (path && path.some(el => el && el.classList && el.classList.contains('fake-gui'))) return;
+    dragging = true;
+    dragPointerId = e.pointerId;
+    const rect = root.getBoundingClientRect();
+    dragOffsetX = e.clientX - rect.left;
+    dragOffsetY = e.clientY - rect.top;
+    try { e.target.setPointerCapture(dragPointerId); } catch (err) {}
+    island.style.cursor = 'grabbing';
+    settings.centered = false;
+    if (settings.posX === null) settings.posX = rect.left;
+    settings.posY = rect.top;
+  }
+  function onPointerMove(e) {
+    if (!dragging || e.pointerId !== dragPointerId) return;
+    const rect = root.getBoundingClientRect();
+    let newLeft = e.clientX - dragOffsetX;
+    let newTop = e.clientY - dragOffsetY;
+    const pad = 8;
+    const width = rect.width, height = rect.height;
+    newLeft = Math.max(pad, Math.min(window.innerWidth - width - pad, newLeft));
+    newTop = Math.max(0, Math.min(window.innerHeight - height - pad, newTop));
+    root.style.left = `${Math.round(newLeft)}px`;
+    root.style.top = `${Math.round(newTop)}px`;
+    root.style.transform = 'none';
+    settings.posX = Math.round(newLeft);
+    settings.posY = Math.round(newTop);
+    // update pos inputs in GUI if present
+    const posXInput = document.querySelector('#bloxdi-posX');
+    const posYInput = document.querySelector('#bloxdi-posY');
+    if (posXInput) posXInput.value = settings.posX;
+    if (posYInput) posYInput.value = settings.posY;
+  }
+  function endDrag(e) {
+    if (!dragging || e.pointerId !== dragPointerId) return;
+    try { e.target.releasePointerCapture(dragPointerId); } catch (err) {}
+    dragging = false; dragPointerId = null;
+    island.style.cursor = settings.locked ? 'default' : 'grab';
+    saveSettings();
+  }
+  island.addEventListener('pointerdown', startDrag);
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+
+  /* ------------------------
+     CLICKGUI (IDK why)
+     ------------------------ */
+  const gui = document.createElement('div');
+  gui.className = 'fake-gui hidden'; // hidden by default
+  document.body.appendChild(gui);
+
+  const arrayList = document.createElement('div');
+  arrayList.className = 'arraylist';
+  document.body.appendChild(arrayList);
+
+  const themeClasses = { 'Dark Orange': '', 'Blue Neon': 'theme-blue' };
+  const themes = ['Dark Orange', 'Blue Neon'];
+
+  // updateArrayList now also ensures CPU/RAM side stats are present and updated
+  function updateArrayList() {
+    arrayList.innerHTML = '';
+    const entries = [];
+    if (settings.showFPS) entries.push('FPS');
+    if (settings.showPing) entries.push('Ping');
+    if (settings.showCPU) entries.push('CPU');
+    if (settings.showRAM) entries.push('RAM');
+    if (settings.showTime) entries.push('Time');
+
+    // show enabled element names
+    entries.forEach(e => {
+      const div = document.createElement('div');
+      div.className = 'arraylist-entry';
+      div.textContent = e;
+      arrayList.appendChild(div);
+    });
+
+    // Add small spacing
+    const spacer = document.createElement('div');
+    spacer.style.height = '6px';
+    arrayList.appendChild(spacer);
+
+    // Add CPU stat line
+    const cpuLine = document.createElement('div');
+    cpuLine.id = 'bloxdi-array-cpu';
+    cpuLine.className = 'arraylist-entry stat';
+    cpuLine.textContent = settings.showCPU ? `CPU: ${cpuPercent}%` : '';
+    arrayList.appendChild(cpuLine);
+
+    // Add RAM stat line
+    const ramLine = document.createElement('div');
+    ramLine.id = 'bloxdi-array-ram';
+    ramLine.className = 'arraylist-entry stat';
+    ramLine.textContent = settings.showRAM ? `RAM: ${lastRamText}` : '';
+    arrayList.appendChild(ramLine);
+  }
+
+  // Columns for clickgui
+  const columns = {
+    "General": ["Enabled", "Show Title"],
+    "Elements": ["FPS", "Ping", "CPU", "RAM", "Time", "Icon"],
+    "Visuals": ["Opacity", "Blur", "Radius", "Size", "Height"],
+    "Gradient": ["Ring Enabled", "Color A", "Color B", "Speed"],
+    "Movement": ["Lock", "Center", "Reset"],
+    "Text colour": ["Text Gradient", "Text Color A", "Text Color B"]
+  };
+
+  // Helper to create a control row (label + element)
+  function makeToggle(name, initial, onchange) {
+    const opt = document.createElement('div');
+    opt.className = 'gui-option';
+    opt.textContent = name + (initial ? ' ✓' : '');
+    if (initial) opt.classList.add('enabled');
+    opt.addEventListener('click', () => {
+      const enabled = opt.classList.toggle('enabled');
+      opt.textContent = name + (enabled ? ' ✓' : '');
+      onchange(enabled);
+      updateArrayList();
+    });
+    return opt;
+  }
+
+  function makeSlider(labelText, min, max, step, value, oninput) {
+    const container = document.createElement('div');
+    container.className = 'slider-container';
+    const label = document.createElement('div'); label.className = 'slider-label'; label.textContent = `${labelText}: ${value}`;
+    const slider = document.createElement('input'); slider.type = 'range'; slider.className = 'slider';
+    slider.min = min; slider.max = max; slider.step = step; slider.value = value;
+    slider.addEventListener('input', () => { label.textContent = `${labelText}: ${slider.value}`; oninput(Number(slider.value)); });
+    container.appendChild(label); container.appendChild(slider);
+    return container;
+  }
+
+  function makeColor(labelText, value, onchange) {
+    const container = document.createElement('div');
+    container.style.marginTop = '6px';
+    const label = document.createElement('div'); label.className = 'slider-label'; label.textContent = labelText;
+    const input = document.createElement('input'); input.type = 'color'; input.value = value; input.style.width = '100%'; input.style.height = '30px';
+    input.addEventListener('input', () => onchange(input.value));
+    container.appendChild(label); container.appendChild(input);
+    return container;
+  }
+
+  // Build columns
+  let xOffset = 0;
+  for (const [category, items] of Object.entries(columns)) {
+    const col = document.createElement('div');
+    col.className = 'gui-column';
+    col.style.left = `${50 + xOffset}px`;
+    col.style.top = `50px`;
+    xOffset += 170;
+
+    const header = document.createElement('div');
+    header.className = 'gui-header';
+    header.textContent = category;
+    col.appendChild(header);
+
+    const content = document.createElement('div');
+    content.className = 'gui-content';
+
+    // Populate based on category
+    if (category === 'General') {
+      const enabledToggle = makeToggle('Enabled', settings.enabled, (v) => { settings.enabled = v; saveSettings(); applyAllSettingsToUI(); });
+      content.appendChild(enabledToggle);
+      const titleToggle = makeToggle('Show Title', true, (v) => { title.style.display = v ? 'block' : 'none'; });
+      content.appendChild(titleToggle);
+    }
+
+    if (category === 'Elements') {
+      content.appendChild(makeToggle('FPS', settings.showFPS, (v) => { settings.showFPS = v; saveSettings(); applyAllSettingsToUI(); }));
+      content.appendChild(makeToggle('Ping', settings.showPing, (v) => { settings.showPing = v; saveSettings(); applyAllSettingsToUI(); }));
+      content.appendChild(makeToggle('CPU', settings.showCPU, (v) => { settings.showCPU = v; saveSettings(); applyAllSettingsToUI(); }));
+      content.appendChild(makeToggle('RAM', settings.showRAM, (v) => { settings.showRAM = v; saveSettings(); applyAllSettingsToUI(); }));
+      content.appendChild(makeToggle('Time', settings.showTime, (v) => { settings.showTime = v; saveSettings(); applyAllSettingsToUI(); }));
+      const iconToggle = makeToggle('Icon', settings.showIcon, (v) => { settings.showIcon = v; saveSettings(); applyAllSettingsToUI(); updateArrayList(); });
+      content.appendChild(iconToggle);
+      const iconUrlInput = document.createElement('input');
+      iconUrlInput.className = 'slider';
+      iconUrlInput.type = 'text';
+      iconUrlInput.placeholder = 'Icon URL (leave blank for emoji)';
+      iconUrlInput.value = settings.iconUrl || '';
+      iconUrlInput.addEventListener('change', () => { settings.iconUrl = iconUrlInput.value.trim(); saveSettings(); applyAllSettingsToUI(); });
+      content.appendChild(iconUrlInput);
+      const iconEmojiInput = document.createElement('input');
+      iconEmojiInput.className = 'slider';
+      iconEmojiInput.type = 'text';
+      iconEmojiInput.placeholder = 'Emoji';
+      iconEmojiInput.maxLength = 2;
+      iconEmojiInput.value = settings.iconEmoji || '';
+      iconEmojiInput.addEventListener('change', () => { settings.iconEmoji = iconEmojiInput.value || '🎮'; saveSettings(); applyAllSettingsToUI(); });
+      content.appendChild(iconEmojiInput);
+    }
+
+    if (category === 'Visuals') {
+      content.appendChild(makeSlider('Opacity', 0.2, 1, 0.01, settings.islandOpacity, (v) => { settings.islandOpacity = v; saveSettings(); applyAllSettingsToUI(); }));
+      content.appendChild(makeSlider('Blur', 0, 24, 1, settings.islandBlur, (v) => { settings.islandBlur = v; saveSettings(); applyAllSettingsToUI(); }));
+      content.appendChild(makeSlider('Radius', 6, 54, 1, settings.borderRadius, (v) => { settings.borderRadius = v; saveSettings(); applyAllSettingsToUI(); }));
+      content.appendChild(makeSlider('Width', 180, 420, 4, settings.size, (v) => { settings.size = v; saveSettings(); applyAllSettingsToUI(); }));
+      content.appendChild(makeSlider('Height', 40, 96, 2, settings.height, (v) => { settings.height = v; saveSettings(); applyAllSettingsToUI(); }));
+    }
+
+    if (category === 'Gradient') {
+      const enableRing = makeToggle('Ring Enabled', settings.gradientEnabled, (v) => { settings.gradientEnabled = v; saveSettings(); applyAllSettingsToUI(); });
+      content.appendChild(enableRing);
+      content.appendChild(makeColor('Color A (glow)', settings.colorA, (v) => { settings.colorA = v; saveSettings(); applyAllSettingsToUI(); }));
+      content.appendChild(makeColor('Color B (glow)', settings.colorB, (v) => { settings.colorB = v; saveSettings(); applyAllSettingsToUI(); }));
+      content.appendChild(makeSlider('Thickness', 0, 30, 1, settings.gradientThickness, (v) => { settings.gradientThickness = v; saveSettings(); applyAllSettingsToUI(); }));
+    }
+
+    if (category === 'Movement') {
+      const lockToggle = makeToggle('Lock', settings.locked, (v) => { settings.locked = v; saveSettings(); applyAllSettingsToUI(); });
+      content.appendChild(lockToggle);
+      const centerBtn = document.createElement('div'); centerBtn.className = 'gui-option'; centerBtn.textContent = 'Center'; centerBtn.addEventListener('click', () => {
+        settings.centered = true; settings.posX = null; settings.posY = DEFAULTS.posY; saveSettings(); applyAllSettingsToUI();
+        const posXInput = document.querySelector('#bloxdi-posX'); const posYInput = document.querySelector('#bloxdi-posY'); if (posXInput) posXInput.value = ''; if (posYInput) posYInput.value = settings.posY;
+      });
+      content.appendChild(centerBtn);
+      const resetBtn = document.createElement('div'); resetBtn.className = 'gui-option'; resetBtn.textContent = 'Reset'; resetBtn.addEventListener('click', () => {
+        settings = { ...DEFAULTS }; saveSettings(); applyAllSettingsToUI(); rebuildGui();
+      });
+      content.appendChild(resetBtn);
+      // numeric inputs for pos
+      const posXLabel = document.createElement('div'); posXLabel.className = 'slider-label'; posXLabel.textContent = 'X (px)';
+      const posXInput = document.createElement('input'); posXInput.id = 'bloxdi-posX'; posXInput.className = 'slider'; posXInput.type = 'number'; posXInput.value = settings.posX === null ? '' : settings.posX;
+      posXInput.addEventListener('change', () => { const v = parseInt(posXInput.value, 10); if (!Number.isNaN(v)) { settings.centered = false; settings.posX = v; saveSettings(); applyAllSettingsToUI(); } });
+      const posYLabel = document.createElement('div'); posYLabel.className = 'slider-label'; posYLabel.textContent = 'Y (px)';
+      const posYInput = document.createElement('input'); posYInput.id = 'bloxdi-posY'; posYInput.className = 'slider'; posYInput.type = 'number'; posYInput.value = settings.posY;
+      posYInput.addEventListener('change', () => { const v = parseInt(posYInput.value, 10); if (!Number.isNaN(v)) { settings.posY = v; saveSettings(); applyAllSettingsToUI(); } });
+      content.appendChild(posXLabel); content.appendChild(posXInput); content.appendChild(posYLabel); content.appendChild(posYInput);
+    }
+
+    if (category === 'Text colour') {
+      // Toggle gradient for island text
+      const textGradToggle = makeToggle('Text Gradient', !!settings.textGradientEnabled, (v) => {
+        settings.textGradientEnabled = v; saveSettings(); applyAllSettingsToUI();
+      });
+      content.appendChild(textGradToggle);
+      // Color pickers for text A/B
+      content.appendChild(makeColor('Text Color A', settings.textColorA, (v) => { settings.textColorA = v; saveSettings(); applyAllSettingsToUI(); }));
+      content.appendChild(makeColor('Text Color B', settings.textColorB, (v) => { settings.textColorB = v; saveSettings(); applyAllSettingsToUI(); }));
+      // Also a fallback single text colour input
+      const singleLabel = document.createElement('div'); singleLabel.className = 'slider-label'; singleLabel.textContent = 'Fallback Color';
+      const singleInput = document.createElement('input'); singleInput.type = 'color'; singleInput.value = settings.textColor; singleInput.style.width = '100%'; singleInput.style.height = '30px';
+      singleInput.addEventListener('input', () => { settings.textColor = singleInput.value; saveSettings(); applyAllSettingsToUI(); });
+      content.appendChild(singleLabel); content.appendChild(singleInput);
+    }
+
+    col.appendChild(content);
+
+    // collapse/expand toggle
+    header.addEventListener('click', () => content.classList.toggle('hidden'));
+
+    // add draggable support to columns (header acts as handle)
+    makeDraggable(col, header);
+
+    gui.appendChild(col);
+  }
+
+  // Make columns draggable (copied/adapted)
+  function makeDraggable(elmnt, handle) {
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+    handle.style.cursor = 'move';
+    handle.onmousedown = dragMouseDown;
+    function dragMouseDown(e) {
+      e.preventDefault();
+      pos3 = e.clientX; pos4 = e.clientY;
+      document.onmouseup = closeDragElement;
+      document.onmousemove = elementDrag;
+    }
+    function elementDrag(e) {
+      e.preventDefault();
+      pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY;
+      pos3 = e.clientX; pos4 = e.clientY;
+      elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+      elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+    }
+    function closeDragElement() { document.onmouseup = null; document.onmousemove = null; }
+  }
+
+  function rebuildGui() {
+    // simple approach: reload page to rebuild GUI cleanly after major reset/load
+    window.location.reload();
+  }
+
+  // Toggle GUI with Right Shift
+  window.addEventListener('keydown', function(e) {
+    if (e.code === 'ShiftRight') {
+      e.preventDefault();
+      gui.classList.toggle('hidden');
+    }
+    if (e.key === 'Escape' && !gui.classList.contains('hidden')) gui.classList.add('hidden');
+  });
+
+  /* ------------------------
+     APPLY SETTINGS TO UI
+     ------------------------ */
+  function applyAllSettingsToUI() {
+    root.style.display = settings.enabled ? 'block' : 'none';
+    island.style.width = `${settings.size}px`;
+    island.style.height = `${settings.height}px`;
+    island.style.borderRadius = `${settings.borderRadius}px`;
+    island.style.backdropFilter = `blur(${settings.islandBlur}px)`;
+    island.style.background = settings.islandBackground;
+    island.style.opacity = `${settings.islandOpacity}`;
+    island.style.color = settings.textColor;
+    island.style.fontFamily = settings.fontFamily;
+    iconWrap.style.width = `${settings.height - 16}px`;
+    iconWrap.style.height = `${settings.height - 16}px`;
+    iconWrap.style.borderRadius = `${Math.max(6, settings.borderRadius - 6)}px`;
+    iconWrap.style.display = settings.showIcon ? 'flex' : 'none';
+    iconEmoji.style.fontSize = `${Math.max(16, (settings.height - 24) / 2)}px`;
+
+    fpsEl.style.display = settings.showFPS ? 'block' : 'none';
+    pingEl.style.display = settings.showPing ? 'block' : 'none';
+    cpuEl.style.display = settings.showCPU ? 'block' : 'none';
+    ramEl.style.display = settings.showRAM ? 'block' : 'none';
+    timeEl.style.display = settings.showTime ? 'block' : 'none';
+
+    if (settings.iconUrl) {
+      iconImg.src = settings.iconUrl; iconImg.style.display = 'block'; iconEmoji.style.display = 'none';
+      iconImg.onerror = () => { iconImg.style.display = 'none'; iconEmoji.style.display = 'flex'; };
+    } else { iconImg.style.display = 'none'; iconEmoji.style.display = 'flex'; iconEmoji.textContent = settings.iconEmoji || DEFAULTS.iconEmoji; }
+
+    // Glow ring: radial gradient blurred (no spin)
+    ring.style.width = `${settings.size + settings.gradientThickness * 2}px`;
+    ring.style.height = `${settings.height + settings.gradientThickness * 2}px`;
+    ring.style.borderRadius = `${settings.borderRadius + settings.gradientThickness}px`;
+    if (settings.gradientEnabled) {
+      // create a soft glow using radial-gradient and blur
+      ring.style.background = `radial-gradient(circle at 50% 50%, ${settings.colorA} 0%, ${settings.colorB} 55%, rgba(0,0,0,0) 70%)`;
+      ring.style.filter = `blur(${Math.max(6, settings.gradientThickness)}px)`;
+      ring.style.opacity = '0.92';
+    } else {
+      ring.style.background = 'transparent';
+      ring.style.filter = 'none';
+      ring.style.opacity = '0';
+    }
+
+    // Text colouring: either gradient text or fallback single color
+    applyTextColourStyles();
+
+    if (settings.floatAnimation) island.classList.add('float-anim'); else island.classList.remove('float-anim');
+    island.style.color = settings.textColor;
+    buildDynamicStyles(); // rebuild CSS for animation values
+    applyPositionToRoot();
+    startPingLoop();
+    updateArrayList();
+  }
+
+  function applyTextColourStyles() {
+    // Title uses gradient if enabled, otherwise a solid fallback color
+    if (settings.textGradientEnabled) {
+      const grad = `linear-gradient(90deg, ${settings.textColorA}, ${settings.textColorB})`;
+      title.style.background = grad;
+      title.style.webkitBackgroundClip = 'text';
+      title.style.backgroundClip = 'text';
+      title.style.color = 'transparent';
+
+      // apply gradient/clipped text to subtitle items
+      for (const el of subtitleRow.children) {
+        el.style.background = grad;
+        el.style.webkitBackgroundClip = 'text';
+        el.style.backgroundClip = 'text';
+        el.style.color = 'transparent';
+      }
+      // small dot keep original color (use first gradient color)
+      smallDot.style.background = settings.textColorA;
+    } else {
+      title.style.background = 'none';
+      title.style.webkitBackgroundClip = 'unset';
+      title.style.backgroundClip = 'unset';
+      title.style.color = settings.textColor;
+
+      for (const el of subtitleRow.children) {
+        el.style.background = 'none';
+        el.style.webkitBackgroundClip = 'unset';
+        el.style.backgroundClip = 'unset';
+        el.style.color = settings.textColor;
+      }
+      smallDot.style.background = settings.textColor;
+    }
+  }
+
+  function buildDynamicStyles() {
+    // Nothing additional needed beyond styleTag, float animation uses settings.floatAmount already in CSS string.
+    // We could rebuild styleTag if floatAmount changes, but it's not critical.
+  }
+
+  /* ------------------------
+     START
+     ------------------------ */
+  buildDynamicStyles();
+  applyAllSettingsToUI();
+  // start metrics loops
+  rafId = requestAnimationFrame(tickFPS);
+  startPingLoop();
+  setInterval(updateSessionTime, 1000);
+  setInterval(updateRAM, 1200);
+  updateRAM();
+
+  // smallDot color refresh (ensure matches text color settings)
+  setInterval(() => {
+    smallDot.style.background = settings.textGradientEnabled ? settings.textColorA : settings.textColor;
+  }, 1000);
+
+  // Periodically refresh side stats so CPU/RAM shown next to arraylist stay current
+  setInterval(() => {
+    const arrCpu = document.getElementById('bloxdi-array-cpu');
+    if (arrCpu) arrCpu.textContent = settings.showCPU ? `CPU: ${cpuPercent}%` : '';
+    const arrRam = document.getElementById('bloxdi-array-ram');
+    if (arrRam) arrRam.textContent = settings.showRAM ? `RAM: ${lastRamText}` : '';
+  }, 800);
+
+  // expose for debug
+  window.bloxdi = {
+    getSettings: () => ({ ...settings }),
+    setSettings: (s) => { settings = { ...settings, ...s }; saveSettings(); applyAllSettingsToUI(); },
+    openGui: () => gui.classList.remove('hidden'),
+    closeGui: () => gui.classList.add('hidden')
+  };
+
+  // clean up on unload
+  window.addEventListener('beforeunload', () => { cancelAnimationFrame(rafId); if (pingTimer) clearInterval(pingTimer); });
+
+  // initial text placeholders
+  fpsEl.textContent = 'FPS: --';
+  pingEl.textContent = 'Ping: --';
+  cpuEl.textContent = 'CPU: --%';
+  ramEl.textContent = 'RAM: --';
+  timeEl.textContent = 'Time: 0s';
+  updateArrayList();
+
+    // too many comments :sob: :pray:
+
+})();
