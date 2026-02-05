@@ -11,3 +11,14 @@ A dynamic island for Bloxd.io. Has a clickgui (open with Right shift). IDK why I
 - 🧩 Smooth Dynamic Island animation
 - And MORE!
 
+## 🛠️ Installation
+1. Download Tampermonkey/Violentmonkey from here: https://www.tampermonkey.net/ https://violentmonkey.github.io/
+2. Goto the file named Bloxd Dynamic Island
+3. Copy the contents, then make a new userscript from Tamper/Vio
+4. Paste the content, then on the top left, press 'File' then press 'Save'
+5. Open Bloxd.io in your browser.  
+6. Press **Right Shift** to open the ClickGUI.  
+
+Will release visual tutorial on how to do this on my YT channel: https://www.youtube.com/@blatantbloxdplayer
+
+Have a good day ahead!
