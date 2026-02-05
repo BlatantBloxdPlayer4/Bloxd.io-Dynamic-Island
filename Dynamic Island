@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Bloxd.io Dynamic Island (FPS / Ping / Time / CPU / RAM) + ClickGUI (Draggable, Text Colour, Glow Ring) — Fix Side-Stat Flicker
+// @name         Bloxd.io Dynamic Island (FPS / Ping / Time / CPU / RAM) + ClickGUI
 // @namespace    https://github.com/BlatantBloxdPlayer4
 // @version      1.5.1
-// @description  Dynamic island overlay for bloxd.io with CPU/RAM shown both on the island and in the ArrayList side panel; draggable island; custom ClickGUI (open with Right Shift). Fixed bug where CPU/RAM sidebar stats briefly reappear when disabled. Persisted in localStorage.
+// @description  Dynamic Island for Bloxd.io with good features!
 // @match        https://bloxd.io/*
 // @match        http://bloxd.io/*
 // @grant        none
@@ -44,7 +44,7 @@
     gradientEnabled: true, // ring glow enabled
     colorA: '#8a2be2',     // ring colour A
     colorB: '#00d4ff',     // ring colour B
-    gradientSpeed: 8,      // not used for rotation anymore, kept for pulse if wanted
+    gradientSpeed: 8,      
     gradientThickness: 8,
     updatePingEvery: 3000,
     fpsSmoothing: 6,
@@ -204,7 +204,7 @@
   const smallDot = document.createElement('div'); smallDot.style.width = '10px'; smallDot.style.height = '10px'; smallDot.style.borderRadius = '50%'; smallDot.style.background = '#7fffd4'; smallDot.style.opacity = '0.85'; right.appendChild(smallDot);
 
   /* ------------------------
-     STYLE (combines original + provided ClickGUI)
+     STYLE
      ------------------------ */
   const guiCss = `
     /* Dynamic Island styles */
@@ -274,7 +274,7 @@
   styleTag.textContent = guiCss;
 
   /* ------------------------
-     CORE METRICS: FPS / PING / TIME / CPU / RAM
+     METRICS: FPS / PING / TIME / CPU / RAM
      ------------------------ */
   let frameTimes = [];
   let rafId = null;
@@ -311,7 +311,7 @@
     rafId = requestAnimationFrame(tickFPS);
   }
 
-  // CPU percent updater - only write to sidebar element when CPU stat is enabled
+  // CPU percent updater
   setInterval(() => {
     const now = performance.now();
     const windowMs = 1000;
@@ -467,7 +467,7 @@
   window.addEventListener('pointercancel', endDrag);
 
   /* ------------------------
-     CLICKGUI: replaced with provided fake-gui, adapted to change island settings
+     CLICKGUI
      ------------------------ */
   const gui = document.createElement('div');
   gui.className = 'fake-gui hidden'; // hidden by default
@@ -523,7 +523,7 @@
     }
   }
 
-  // Column definitions (module tabs) - "Configs" renamed to "Text colour"
+  // Column definitions
   const columns = {
     "General": ["Enabled", "Show Title"],
     "Elements": ["FPS", "Ping", "CPU", "RAM", "Time", "Icon"],
@@ -856,5 +856,6 @@
   ramEl.textContent = 'RAM: --';
   timeEl.textContent = 'Time: 0s';
   updateArrayList();
+// too many comments :sob: :pray:
 
 })();
