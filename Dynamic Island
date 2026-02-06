@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Bloxd.io Dynamic Island (FPS / Ping / Time / CPU / RAM) + ClickGUI
+// @name         Bloxd.io Dynamic Island
 // @namespace    https://github.com/BlatantBloxdPlayer4
-// @version      1.5.1
-// @description  Dynamic Island for Bloxd.io with good features!
+// @version      1.6.0
+// @description  Dynamic Island overlay (FPS/Ping/CPU/RAM/Time) with a ClickGUI (for some reason)
 // @match        https://bloxd.io/*
 // @match        http://bloxd.io/*
 // @grant        none
@@ -11,10 +11,10 @@
 (() => {
   'use strict';
 
-  /* ------------------------
-     STORAGE & DEFAULTS
-     ------------------------ */
+  // Storage key
   const STORAGE_KEY = 'bloxddynamicisland_settings_v1';
+
+  // Defaults
   const DEFAULTS = {
     enabled: true,
     showFPS: true,
@@ -28,28 +28,23 @@
     islandOpacity: 0.75,
     islandBlur: 8,
     islandBackground: 'rgba(0,0,0,0.35)',
-    // fallback single text color (used when gradient disabled)
     textColor: '#ffffff',
-    // new: two text colours (user requested)
     textColorA: '#ffffff',
     textColorB: '#ff9248',
     textGradientEnabled: false,
-
     fontFamily: 'Inter, Roboto, system-ui, Arial, sans-serif',
     borderRadius: 18,
     size: 240,
     height: 56,
     floatAnimation: true,
     floatAmount: 6,
-    gradientEnabled: true, // ring glow enabled
-    colorA: '#8a2be2',     // ring colour A
-    colorB: '#00d4ff',     // ring colour B
-    gradientSpeed: 8,      
+    gradientEnabled: true,
+    colorA: '#8a2be2',
+    colorB: '#00d4ff',
+    gradientSpeed: 8,
     gradientThickness: 8,
     updatePingEvery: 3000,
     fpsSmoothing: 6,
-
-    // Position / Movement
     centered: true,
     posX: null,
     posY: 18,
@@ -74,159 +69,68 @@
 
   let settings = loadSettings();
 
-  /* ------------------------
-     BUILD ISLAND DOM
-     ------------------------ */
-  const root = document.createElement('div');
-  root.id = 'bloxdi-root';
-  root.style.position = 'fixed';
-  root.style.left = '50%';
-  root.style.top = `${settings.posY}px`;
-  root.style.transform = 'translateX(-50%)';
-  root.style.zIndex = '999999';
-  root.style.pointerEvents = 'auto';
-  root.style.display = settings.enabled ? 'block' : 'none';
-  document.body.appendChild(root);
+  // Create a host element and attach an open Shadow DOM so our UI and CSS are isolated from any injected client.
+  const host = document.createElement('div');
+  host.id = 'bloxdi-host';
+  // Keep the host out of the way visually. The actual UI will live in the shadow root.
+  host.style.position = 'fixed';
+  host.style.inset = '0px';
+  host.style.pointerEvents = 'none'; // allow through by default; actual UI elements override pointerEvents locally
+  host.style.zIndex = '2147483646'; // very high but still below browser UI; adjustable if needed
+  document.documentElement.appendChild(host);
 
-  const styleTag = document.createElement('style');
-  styleTag.id = 'bloxdi-styles';
-  document.head.appendChild(styleTag);
+  const shadow = host.attachShadow({ mode: 'open' });
 
-  const island = document.createElement('div');
-  island.id = 'bloxdi-island';
-  island.setAttribute('role', 'status');
-  island.style.width = `${settings.size}px`;
-  island.style.height = `${settings.height}px`;
-  island.style.display = 'flex';
-  island.style.alignItems = 'center';
-  island.style.justifyContent = 'space-between';
-  island.style.padding = '8px 14px';
-  island.style.boxSizing = 'border-box';
-  island.style.backdropFilter = `blur(${settings.islandBlur}px)`;
-  island.style.background = settings.islandBackground;
-  island.style.opacity = `${settings.islandOpacity}`;
-  island.style.borderRadius = `${settings.borderRadius}px`;
-  island.style.color = settings.textColor;
-  island.style.fontFamily = settings.fontFamily;
-  island.style.boxShadow = '0 6px 22px rgba(0,0,0,0.35)';
-  island.style.cursor = 'grab';
-  island.style.transition = 'opacity 200ms, transform 200ms';
-  island.style.position = 'relative';
-  root.appendChild(island);
-
-  // ring = glow (no rotation)
-  const ring = document.createElement('div');
-  ring.id = 'bloxdi-ring';
-  ring.style.position = 'absolute';
-  ring.style.left = '50%';
-  ring.style.top = '50%';
-  ring.style.transform = 'translate(-50%,-50%)';
-  ring.style.width = `${settings.size + settings.gradientThickness * 2}px`;
-  ring.style.height = `${settings.height + settings.gradientThickness * 2}px`;
-  ring.style.borderRadius = `${settings.borderRadius + settings.gradientThickness}px`;
-  // glow-specific defaults (will be updated in applyAllSettingsToUI)
-  ring.style.filter = 'blur(14px)';
-  ring.style.pointerEvents = 'none';
-  ring.style.zIndex = '-1';
-  root.appendChild(ring);
-
-  const left = document.createElement('div');
-  left.id = 'bloxdi-left';
-  left.style.display = 'flex';
-  left.style.alignItems = 'center';
-  left.style.gap = '10px';
-  island.appendChild(left);
-
-  const iconWrap = document.createElement('div');
-  iconWrap.id = 'bloxdi-iconwrap';
-  iconWrap.style.width = `${settings.height - 16}px`;
-  iconWrap.style.height = `${settings.height - 16}px`;
-  iconWrap.style.flex = '0 0 auto';
-  iconWrap.style.display = settings.showIcon ? 'flex' : 'none';
-  iconWrap.style.alignItems = 'center';
-  iconWrap.style.justifyContent = 'center';
-  iconWrap.style.overflow = 'hidden';
-  iconWrap.style.borderRadius = `${Math.max(6, settings.borderRadius - 6)}px`;
-  iconWrap.style.background = 'rgba(255,255,255,0.06)';
-  iconWrap.style.fontSize = `${Math.max(16, (settings.height - 24) / 2)}px`;
-  iconWrap.style.color = settings.textColor;
-  left.appendChild(iconWrap);
-
-  const iconImg = document.createElement('img');
-  iconImg.id = 'bloxdi-iconimg';
-  iconImg.style.maxWidth = '100%';
-  iconImg.style.maxHeight = '100%';
-  iconImg.style.objectFit = 'cover';
-  iconImg.style.display = 'none';
-  iconWrap.appendChild(iconImg);
-
-  const iconEmoji = document.createElement('div');
-  iconEmoji.id = 'bloxdi-iconemoji';
-  iconEmoji.style.display = 'flex';
-  iconEmoji.style.alignItems = 'center';
-  iconEmoji.style.justifyContent = 'center';
-  iconEmoji.style.fontSize = '20px';
-  iconEmoji.textContent = settings.iconEmoji;
-  iconWrap.appendChild(iconEmoji);
-
-  const center = document.createElement('div');
-  center.id = 'bloxdi-center';
-  center.style.display = 'flex';
-  center.style.flexDirection = 'column';
-  center.style.flex = '1 1 auto';
-  center.style.gap = '2px';
-  island.appendChild(center);
-
-  const title = document.createElement('div');
-  title.id = 'bloxdi-title';
-  title.style.fontSize = '12px';
-  title.style.opacity = '0.9';
-  title.style.fontWeight = '600';
-  title.textContent = 'Bloxd Dynamic Island';
-  center.appendChild(title);
-
-  const subtitleRow = document.createElement('div');
-  subtitleRow.id = 'bloxdi-subrow';
-  subtitleRow.style.display = 'flex';
-  subtitleRow.style.gap = '12px';
-  subtitleRow.style.alignItems = 'center';
-  subtitleRow.style.fontSize = '13px';
-  subtitleRow.style.opacity = '0.95';
-  center.appendChild(subtitleRow);
-
-  const fpsEl = document.createElement('div'); fpsEl.id = 'bloxdi-fps'; fpsEl.textContent = 'FPS: --'; subtitleRow.appendChild(fpsEl);
-  const pingEl = document.createElement('div'); pingEl.id = 'bloxdi-ping'; pingEl.textContent = 'Ping: --'; subtitleRow.appendChild(pingEl);
-  const cpuEl = document.createElement('div'); cpuEl.id = 'bloxdi-cpu'; cpuEl.textContent = 'CPU: --%'; subtitleRow.appendChild(cpuEl);
-  const ramEl = document.createElement('div'); ramEl.id = 'bloxdi-ram'; ramEl.textContent = 'RAM: --'; subtitleRow.appendChild(ramEl);
-  const timeEl = document.createElement('div'); timeEl.id = 'bloxdi-time'; timeEl.textContent = 'Time: 0s'; subtitleRow.appendChild(timeEl);
-
-  const right = document.createElement('div'); right.id = 'bloxdi-right'; right.style.flex = '0 0 auto'; right.style.display = 'flex'; right.style.alignItems = 'center'; right.style.gap = '8px'; island.appendChild(right);
-  const smallDot = document.createElement('div'); smallDot.style.width = '10px'; smallDot.style.height = '10px'; smallDot.style.borderRadius = '50%'; smallDot.style.background = '#7fffd4'; smallDot.style.opacity = '0.85'; right.appendChild(smallDot);
-
-  /* ------------------------
-     STYLE
-     ------------------------ */
-  const guiCss = `
-    /* Dynamic Island styles */
-    #bloxdi-root * { box-sizing: border-box; }
-    #bloxdi-island { user-select: none; -webkit-user-select: none; }
-    #bloxdi-island.float-anim { animation: bloxdi-float ${Math.max(2, settings.gradientSpeed / 2)}s ease-in-out infinite; }
-    @keyframes bloxdi-float { 0% { transform: translateY(0); } 50% { transform: translateY(-${settings.floatAmount}px); } 100% { transform: translateY(0); } }
-
-    /* ClickGUI (adapted) */
-    .fake-gui {
-        font-family: 'Arial', sans-serif;
-        display: flex;
-        flex-direction: row;
-        position: fixed;
-        top: 50px;
-        left: 50px;
-        z-index: 1000002;
-        pointer-events: auto;
+  // Build style (scoped inside shadow DOM)
+  const styleEl = document.createElement('style');
+  styleEl.textContent = `
+    :host { all: initial; } /* reset inherited properties for robustness */
+    /* Container resets */
+    .bloxdi-root { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+    /* Island host - positioned separately */
+    .bloxdi-island-host { position: fixed; pointer-events: auto; z-index: 9999999; }
+    .bloxdi-island {
+      box-sizing: border-box;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:8px 14px;
+      backdrop-filter: blur(8px);
+      background: rgba(0,0,0,0.35);
+      border-radius: 18px;
+      color: #fff;
+      font-family: Inter, Roboto, system-ui, Arial, sans-serif;
+      box-shadow: 0 6px 22px rgba(0,0,0,0.35);
+      pointer-events: auto;
+      user-select: none;
     }
+    .bloxdi-ring {
+      pointer-events: none;
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%,-50%);
+      z-index: -1;
+    }
+    .bloxdi-left { display:flex; align-items:center; gap:10px; }
+    .bloxdi-iconwrap {
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      overflow:hidden;
+      background: rgba(255,255,255,0.06);
+    }
+    .bloxdi-center { display:flex; flex-direction:column; gap:2px; }
+    .bloxdi-title { font-size:12px; font-weight:600; opacity:0.92; }
+    .bloxdi-subrow { display:flex; gap:12px; align-items:center; font-size:13px; opacity:0.95; }
+    .bloxdi-right { display:flex; align-items:center; gap:8px; }
+    .bloxdi-smalldot { width:10px; height:10px; border-radius:50%; opacity:0.85; }
+
+    /* ClickGUI (scoped) */
+    .fake-gui { font-family: Arial, sans-serif; display:flex; flex-direction:row; position: fixed; top: 50px; left: 50px; pointer-events: auto; z-index: 9999998; }
     .gui-column {
-        background: var(--bg-color);
-        border: 1px solid var(--accent);
+        background: rgba(40,40,40,0.95);
+        border: 1px solid rgba(255,146,72,0.9);
         margin-right: 5px;
         width: 160px;
         color: white;
@@ -235,12 +139,13 @@
         user-select: none;
         border-radius:8px;
         overflow: hidden;
+        pointer-events: auto;
     }
     .gui-header {
         background: #2a2a2a;
         padding: 8px;
         cursor: move;
-        color: var(--accent);
+        color: rgba(255,146,72,0.98);
         font-size: 14px;
         font-weight: bold;
     }
@@ -248,33 +153,84 @@
         padding: 8px;
         background: rgba(0,0,0,0.12);
     }
-    .gui-option {
-        cursor: pointer;
-        padding: 3px 0;
-        font-size: 13px;
-    }
-    .gui-option.enabled {
-        color: var(--accent);
-    }
-    .gui-option:hover {
-        background: rgba(255, 255, 255, 0.03);
-    }
+    .gui-option { cursor: pointer; padding: 3px 0; font-size: 13px; }
+    .gui-option.enabled { color: rgba(255,146,72,0.98); }
+    .gui-option:hover { background: rgba(255,255,255,0.03); }
     .slider-container { margin-top: 5px; }
     .slider-label { font-size: 12px; margin-bottom: 4px; color: #ddd; }
     .slider { width: 100%; }
-    .arraylist { position: fixed; top: 10px; right: 10px; text-align: right; font-family: Arial, sans-serif; font-size: 14px; color: var(--accent); z-index: 1000001; pointer-events: none; }
+    .arraylist { position: fixed; top: 10px; right: 10px; text-align: right; font-family: Arial, sans-serif; font-size: 14px; color: rgba(255,146,72,0.98); z-index: 9999998; pointer-events: none; }
     .arraylist-entry { margin: 2px 0; }
     .arraylist-entry.stat { opacity: 0.95; font-weight: 600; }
-    .theme-switcher { padding: 5px; width: 100%; background: #222; color: white; border-top: 1px solid var(--accent); font-size: 12px; }
+    .theme-switcher { padding: 5px; width: 100%; background: #222; color: white; border-top: 1px solid rgba(255,146,72,0.9); font-size: 12px; }
     .hidden { display: none; }
-    :root { --bg-color: rgba(40, 40, 40, 0.95); --accent: #ff9248; }
-    .theme-blue { --bg-color: rgba(20, 20, 40, 0.95); --accent: #00ffff; }
     @media (max-width:560px) { .fake-gui { transform: scale(0.9); } }
   `;
-  styleTag.textContent = guiCss;
+  shadow.appendChild(styleEl);
+
+  // Container inside shadow
+  const root = document.createElement('div');
+  root.className = 'bloxdi-root';
+  shadow.appendChild(root);
+
+  // Island host (for positioning)
+  const islandHost = document.createElement('div');
+  islandHost.className = 'bloxdi-island-host';
+  // initial positioning - will be applied by applyPositionToRoot()
+  islandHost.style.left = '50%';
+  islandHost.style.top = `${settings.posY}px`;
+  islandHost.style.transform = 'translateX(-50%)';
+  root.appendChild(islandHost);
+
+  // Island element
+  const island = document.createElement('div');
+  island.className = 'bloxdi-island';
+  island.style.width = `${settings.size}px`;
+  island.style.height = `${settings.height}px`;
+  island.style.borderRadius = `${settings.borderRadius}px`;
+  island.style.backdropFilter = `blur(${settings.islandBlur}px)`;
+  island.style.background = settings.islandBackground;
+  island.style.opacity = `${settings.islandOpacity}`;
+  islandHost.appendChild(island);
+
+  // Glow ring
+  const ring = document.createElement('div');
+  ring.className = 'bloxdi-ring';
+  ring.style.width = `${settings.size + settings.gradientThickness * 2}px`;
+  ring.style.height = `${settings.height + settings.gradientThickness * 2}px`;
+  ring.style.borderRadius = `${settings.borderRadius + settings.gradientThickness}px`;
+  islandHost.appendChild(ring);
+
+  // Left / center / right
+  const left = document.createElement('div'); left.className = 'bloxdi-left'; island.appendChild(left);
+  const iconWrap = document.createElement('div'); iconWrap.className = 'bloxdi-iconwrap'; iconWrap.style.width = `${settings.height - 16}px`; iconWrap.style.height = `${settings.height - 16}px`; left.appendChild(iconWrap);
+  const iconImg = document.createElement('img'); iconImg.style.maxWidth = '100%'; iconImg.style.maxHeight = '100%'; iconImg.style.objectFit = 'cover'; iconImg.style.display = 'none'; iconWrap.appendChild(iconImg);
+  const iconEmoji = document.createElement('div'); iconEmoji.textContent = settings.iconEmoji; iconWrap.appendChild(iconEmoji);
+
+  const center = document.createElement('div'); center.className = 'bloxdi-center'; island.appendChild(center);
+  const title = document.createElement('div'); title.className = 'bloxdi-title'; title.textContent = 'Bloxd Dynamic Island'; center.appendChild(title);
+  const subtitleRow = document.createElement('div'); subtitleRow.className = 'bloxdi-subrow'; center.appendChild(subtitleRow);
+
+  const fpsEl = document.createElement('div'); fpsEl.id = 'bloxdi-fps'; fpsEl.textContent = 'FPS: --'; subtitleRow.appendChild(fpsEl);
+  const pingEl = document.createElement('div'); pingEl.id = 'bloxdi-ping'; pingEl.textContent = 'Ping: --'; subtitleRow.appendChild(pingEl);
+  const cpuEl = document.createElement('div'); cpuEl.id = 'bloxdi-cpu'; cpuEl.textContent = 'CPU: --%'; subtitleRow.appendChild(cpuEl);
+  const ramEl = document.createElement('div'); ramEl.id = 'bloxdi-ram'; ramEl.textContent = 'RAM: --'; subtitleRow.appendChild(ramEl);
+  const timeEl = document.createElement('div'); timeEl.id = 'bloxdi-time'; timeEl.textContent = 'Time: 0s'; subtitleRow.appendChild(timeEl);
+
+  const right = document.createElement('div'); right.className = 'bloxdi-right'; island.appendChild(right);
+  const smallDot = document.createElement('div'); smallDot.className = 'bloxdi-smalldot'; right.appendChild(smallDot);
+
+  // ClickGUI and arraylist inside shadow
+  const gui = document.createElement('div');
+  gui.className = 'fake-gui hidden';
+  root.appendChild(gui);
+
+  const arrayList = document.createElement('div');
+  arrayList.className = 'arraylist';
+  root.appendChild(arrayList);
 
   /* ------------------------
-     METRICS: FPS / PING / TIME / CPU / RAM
+     METRICS
      ------------------------ */
   let frameTimes = [];
   let rafId = null;
@@ -311,7 +267,6 @@
     rafId = requestAnimationFrame(tickFPS);
   }
 
-  // CPU percent updater
   setInterval(() => {
     const now = performance.now();
     const windowMs = 1000;
@@ -319,18 +274,14 @@
     const recent = procSamples.filter(s => s.t >= cutoff);
     const busy = recent.reduce((s, x) => s + x.duration, 0);
     cpuPercent = Math.min(100, Math.round((busy / windowMs) * 100));
-    if (settings.showCPU) {
-      cpuEl.textContent = `CPU: ${cpuPercent}%`;
-    } else {
-      cpuEl.textContent = ''; // keep island element cleared
-    }
+    if (settings.showCPU) cpuEl.textContent = `CPU: ${cpuPercent}%`;
+    else cpuEl.textContent = '';
 
-    // update sidebar stat if it exists AND setting enabled
-    const arrCpu = document.getElementById('bloxdi-array-cpu');
+    // update sidebar stat
+    const arrCpu = root.querySelector('#bloxdi-array-cpu');
     if (arrCpu) {
-      arrCpu.textContent = settings.showCPU ? `CPU: ${cpuPercent}%` : '';
-      // If disabled, also remove element entirely to avoid intermittent flashes
-      if (!settings.showCPU) arrCpu.remove();
+      if (settings.showCPU) arrCpu.textContent = `CPU: ${cpuPercent}%`;
+      else arrCpu.remove();
     }
   }, 700);
 
@@ -360,11 +311,10 @@
       if (settings.showRAM) { ramEl.textContent = 'RAM: --'; lastRamText = '--'; }
       else { ramEl.textContent = ''; lastRamText = '--'; }
     }
-    // update sidebar stat if present and setting enabled
-    const arrRam = document.getElementById('bloxdi-array-ram');
+    const arrRam = root.querySelector('#bloxdi-array-ram');
     if (arrRam) {
-      arrRam.textContent = settings.showRAM ? `RAM: ${lastRamText}` : '';
-      if (!settings.showRAM) arrRam.remove();
+      if (settings.showRAM) arrRam.textContent = `RAM: ${lastRamText}`;
+      else arrRam.remove();
     }
   }
 
@@ -406,13 +356,13 @@
      ------------------------ */
   function applyPositionToRoot() {
     if (settings.centered) {
-      root.style.left = '50%';
-      root.style.transform = 'translateX(-50%)';
-      root.style.top = `${settings.posY}px`;
+      islandHost.style.left = '50%';
+      islandHost.style.transform = 'translateX(-50%)';
+      islandHost.style.top = `${settings.posY}px`;
     } else {
-      if (settings.posX === null) root.style.left = '50%', root.style.transform = 'translateX(-50%)';
-      else { root.style.left = `${Math.round(settings.posX)}px`; root.style.transform = 'none'; }
-      root.style.top = `${Math.round(settings.posY)}px`;
+      if (settings.posX === null) islandHost.style.left = '50%', islandHost.style.transform = 'translateX(-50%)';
+      else { islandHost.style.left = `${Math.round(settings.posX)}px`; islandHost.style.transform = 'none'; }
+      islandHost.style.top = `${Math.round(settings.posY)}px`;
     }
     island.style.cursor = settings.locked ? 'default' : 'grab';
   }
@@ -421,11 +371,12 @@
   function startDrag(e) {
     if (settings.locked) return;
     if (e.isPrimary === false) return;
+    // avoid starting drag when clicking inside GUI
     const path = e.composedPath ? e.composedPath() : (e.path || []);
     if (path && path.some(el => el && el.classList && el.classList.contains('fake-gui'))) return;
     dragging = true;
     dragPointerId = e.pointerId;
-    const rect = root.getBoundingClientRect();
+    const rect = islandHost.getBoundingClientRect();
     dragOffsetX = e.clientX - rect.left;
     dragOffsetY = e.clientY - rect.top;
     try { e.target.setPointerCapture(dragPointerId); } catch (err) {}
@@ -436,21 +387,21 @@
   }
   function onPointerMove(e) {
     if (!dragging || e.pointerId !== dragPointerId) return;
-    const rect = root.getBoundingClientRect();
+    const rect = islandHost.getBoundingClientRect();
     let newLeft = e.clientX - dragOffsetX;
     let newTop = e.clientY - dragOffsetY;
     const pad = 8;
     const width = rect.width, height = rect.height;
     newLeft = Math.max(pad, Math.min(window.innerWidth - width - pad, newLeft));
     newTop = Math.max(0, Math.min(window.innerHeight - height - pad, newTop));
-    root.style.left = `${Math.round(newLeft)}px`;
-    root.style.top = `${Math.round(newTop)}px`;
-    root.style.transform = 'none';
+    islandHost.style.left = `${Math.round(newLeft)}px`;
+    islandHost.style.top = `${Math.round(newTop)}px`;
+    islandHost.style.transform = 'none';
     settings.posX = Math.round(newLeft);
     settings.posY = Math.round(newTop);
     // update pos inputs in GUI if present
-    const posXInput = document.querySelector('#bloxdi-posX');
-    const posYInput = document.querySelector('#bloxdi-posY');
+    const posXInput = root.querySelector('#bloxdi-posX');
+    const posYInput = root.querySelector('#bloxdi-posY');
     if (posXInput) posXInput.value = settings.posX;
     if (posYInput) posYInput.value = settings.posY;
   }
@@ -467,73 +418,10 @@
   window.addEventListener('pointercancel', endDrag);
 
   /* ------------------------
-     CLICKGUI
+     ClickGUI build (scoped inside shadow root)
      ------------------------ */
-  const gui = document.createElement('div');
-  gui.className = 'fake-gui hidden'; // hidden by default
-  document.body.appendChild(gui);
 
-  const arrayList = document.createElement('div');
-  arrayList.className = 'arraylist';
-  document.body.appendChild(arrayList);
-
-  const themeClasses = { 'Dark Orange': '', 'Blue Neon': 'theme-blue' };
-  const themes = ['Dark Orange', 'Blue Neon'];
-
-  // updateArrayList now only creates CPU/RAM side stat elements when the corresponding setting is enabled,
-  // ensuring they are removed entirely when disabled (prevents flicker)
-  function updateArrayList() {
-    arrayList.innerHTML = '';
-    const entries = [];
-    if (settings.showFPS) entries.push('FPS');
-    if (settings.showPing) entries.push('Ping');
-    if (settings.showCPU) entries.push('CPU');
-    if (settings.showRAM) entries.push('RAM');
-    if (settings.showTime) entries.push('Time');
-
-    // show enabled element names
-    entries.forEach(e => {
-      const div = document.createElement('div');
-      div.className = 'arraylist-entry';
-      div.textContent = e;
-      arrayList.appendChild(div);
-    });
-
-    // Add small spacing
-    const spacer = document.createElement('div');
-    spacer.style.height = '6px';
-    arrayList.appendChild(spacer);
-
-    // Add CPU stat line only if enabled
-    if (settings.showCPU) {
-      const cpuLine = document.createElement('div');
-      cpuLine.id = 'bloxdi-array-cpu';
-      cpuLine.className = 'arraylist-entry stat';
-      cpuLine.textContent = `CPU: ${cpuPercent}%`;
-      arrayList.appendChild(cpuLine);
-    }
-
-    // Add RAM stat line only if enabled
-    if (settings.showRAM) {
-      const ramLine = document.createElement('div');
-      ramLine.id = 'bloxdi-array-ram';
-      ramLine.className = 'arraylist-entry stat';
-      ramLine.textContent = `RAM: ${lastRamText}`;
-      arrayList.appendChild(ramLine);
-    }
-  }
-
-  // Column definitions
-  const columns = {
-    "General": ["Enabled", "Show Title"],
-    "Elements": ["FPS", "Ping", "CPU", "RAM", "Time", "Icon"],
-    "Visuals": ["Opacity", "Blur", "Radius", "Size", "Height"],
-    "Gradient": ["Ring Enabled", "Color A", "Color B", "Thickness"],
-    "Movement": ["Lock", "Center", "Reset"],
-    "Text colour": ["Text Gradient", "Text Color A", "Text Color B"]
-  };
-
-  // Helper to create a control row (label + element)
+  // Helper factories
   function makeToggle(name, initial, onchange) {
     const opt = document.createElement('div');
     opt.className = 'gui-option';
@@ -547,7 +435,6 @@
     });
     return opt;
   }
-
   function makeSlider(labelText, min, max, step, value, oninput) {
     const container = document.createElement('div');
     container.className = 'slider-container';
@@ -558,7 +445,6 @@
     container.appendChild(label); container.appendChild(slider);
     return container;
   }
-
   function makeColor(labelText, value, onchange) {
     const container = document.createElement('div');
     container.style.marginTop = '6px';
@@ -569,7 +455,49 @@
     return container;
   }
 
-  // Build columns
+  // Update arraylist
+  function updateArrayList() {
+    arrayList.innerHTML = '';
+    const entries = [];
+    if (settings.showFPS) entries.push('FPS');
+    if (settings.showPing) entries.push('Ping');
+    if (settings.showCPU) entries.push('CPU');
+    if (settings.showRAM) entries.push('RAM');
+    if (settings.showTime) entries.push('Time');
+    entries.forEach(e => {
+      const div = document.createElement('div');
+      div.className = 'arraylist-entry';
+      div.textContent = e;
+      arrayList.appendChild(div);
+    });
+    const spacer = document.createElement('div'); spacer.style.height = '6px'; arrayList.appendChild(spacer);
+    if (settings.showCPU) {
+      const cpuLine = document.createElement('div');
+      cpuLine.id = 'bloxdi-array-cpu';
+      cpuLine.className = 'arraylist-entry stat';
+      cpuLine.textContent = `CPU: ${cpuPercent}%`;
+      arrayList.appendChild(cpuLine);
+    }
+    if (settings.showRAM) {
+      const ramLine = document.createElement('div');
+      ramLine.id = 'bloxdi-array-ram';
+      ramLine.className = 'arraylist-entry stat';
+      ramLine.textContent = `RAM: ${lastRamText}`;
+      arrayList.appendChild(ramLine);
+    }
+  }
+
+  // Columns (some hack client looking ahh)
+  const columns = {
+    "General": ["Enabled", "Show Title"],
+    "Elements": ["FPS", "Ping", "CPU", "RAM", "Time", "Icon"],
+    "Visuals": ["Opacity", "Blur", "Radius", "Size", "Height"],
+    "Gradient": ["Ring Enabled", "Color A", "Color B", "Thickness"],
+    "Movement": ["Lock", "Center", "Reset"],
+    "Text colour": ["Text Gradient", "Text Color A", "Text Color B"]
+  };
+
+  // Build GUI columns
   let xOffset = 0;
   for (const [category, items] of Object.entries(columns)) {
     const col = document.createElement('div');
@@ -578,15 +506,9 @@
     col.style.top = `50px`;
     xOffset += 170;
 
-    const header = document.createElement('div');
-    header.className = 'gui-header';
-    header.textContent = category;
-    col.appendChild(header);
+    const header = document.createElement('div'); header.className = 'gui-header'; header.textContent = category; col.appendChild(header);
+    const content = document.createElement('div'); content.className = 'gui-content';
 
-    const content = document.createElement('div');
-    content.className = 'gui-content';
-
-    // Populate based on category
     if (category === 'General') {
       const enabledToggle = makeToggle('Enabled', settings.enabled, (v) => { settings.enabled = v; saveSettings(); applyAllSettingsToUI(); });
       content.appendChild(enabledToggle);
@@ -602,19 +524,14 @@
       content.appendChild(makeToggle('Time', settings.showTime, (v) => { settings.showTime = v; saveSettings(); applyAllSettingsToUI(); }));
       const iconToggle = makeToggle('Icon', settings.showIcon, (v) => { settings.showIcon = v; saveSettings(); applyAllSettingsToUI(); updateArrayList(); });
       content.appendChild(iconToggle);
-      const iconUrlInput = document.createElement('input');
-      iconUrlInput.className = 'slider';
-      iconUrlInput.type = 'text';
-      iconUrlInput.placeholder = 'Icon URL (leave blank for emoji)';
-      iconUrlInput.value = settings.iconUrl || '';
+
+      const iconUrlInput = document.createElement('input'); iconUrlInput.className = 'slider'; iconUrlInput.type = 'text';
+      iconUrlInput.placeholder = 'Icon URL (leave blank for emoji)'; iconUrlInput.value = settings.iconUrl || '';
       iconUrlInput.addEventListener('change', () => { settings.iconUrl = iconUrlInput.value.trim(); saveSettings(); applyAllSettingsToUI(); });
       content.appendChild(iconUrlInput);
-      const iconEmojiInput = document.createElement('input');
-      iconEmojiInput.className = 'slider';
-      iconEmojiInput.type = 'text';
-      iconEmojiInput.placeholder = 'Emoji';
-      iconEmojiInput.maxLength = 2;
-      iconEmojiInput.value = settings.iconEmoji || '';
+
+      const iconEmojiInput = document.createElement('input'); iconEmojiInput.className = 'slider'; iconEmojiInput.type = 'text';
+      iconEmojiInput.placeholder = 'Emoji'; iconEmojiInput.maxLength = 2; iconEmojiInput.value = settings.iconEmoji || '';
       iconEmojiInput.addEventListener('change', () => { settings.iconEmoji = iconEmojiInput.value || '🎮'; saveSettings(); applyAllSettingsToUI(); });
       content.appendChild(iconEmojiInput);
     }
@@ -628,26 +545,22 @@
     }
 
     if (category === 'Gradient') {
-      const enableRing = makeToggle('Ring Enabled', settings.gradientEnabled, (v) => { settings.gradientEnabled = v; saveSettings(); applyAllSettingsToUI(); });
-      content.appendChild(enableRing);
+      content.appendChild(makeToggle('Ring Enabled', settings.gradientEnabled, (v) => { settings.gradientEnabled = v; saveSettings(); applyAllSettingsToUI(); }));
       content.appendChild(makeColor('Color A (glow)', settings.colorA, (v) => { settings.colorA = v; saveSettings(); applyAllSettingsToUI(); }));
       content.appendChild(makeColor('Color B (glow)', settings.colorB, (v) => { settings.colorB = v; saveSettings(); applyAllSettingsToUI(); }));
       content.appendChild(makeSlider('Thickness', 0, 30, 1, settings.gradientThickness, (v) => { settings.gradientThickness = v; saveSettings(); applyAllSettingsToUI(); }));
     }
 
     if (category === 'Movement') {
-      const lockToggle = makeToggle('Lock', settings.locked, (v) => { settings.locked = v; saveSettings(); applyAllSettingsToUI(); });
-      content.appendChild(lockToggle);
-      const centerBtn = document.createElement('div'); centerBtn.className = 'gui-option'; centerBtn.textContent = 'Center'; centerBtn.addEventListener('click', () => {
-        settings.centered = true; settings.posX = null; settings.posY = DEFAULTS.posY; saveSettings(); applyAllSettingsToUI();
-        const posXInput = document.querySelector('#bloxdi-posX'); const posYInput = document.querySelector('#bloxdi-posY'); if (posXInput) posXInput.value = ''; if (posYInput) posYInput.value = settings.posY;
-      });
+      content.appendChild(makeToggle('Lock', settings.locked, (v) => { settings.locked = v; saveSettings(); applyAllSettingsToUI(); }));
+      const centerBtn = document.createElement('div'); centerBtn.className = 'gui-option'; centerBtn.textContent = 'Center';
+      centerBtn.addEventListener('click', () => { settings.centered = true; settings.posX = null; settings.posY = DEFAULTS.posY; saveSettings(); applyAllSettingsToUI(); const posXInput = root.querySelector('#bloxdi-posX'); const posYInput = root.querySelector('#bloxdi-posY'); if (posXInput) posXInput.value = ''; if (posYInput) posYInput.value = settings.posY; });
       content.appendChild(centerBtn);
-      const resetBtn = document.createElement('div'); resetBtn.className = 'gui-option'; resetBtn.textContent = 'Reset'; resetBtn.addEventListener('click', () => {
-        settings = { ...DEFAULTS }; saveSettings(); applyAllSettingsToUI(); rebuildGui();
-      });
+
+      const resetBtn = document.createElement('div'); resetBtn.className = 'gui-option'; resetBtn.textContent = 'Reset';
+      resetBtn.addEventListener('click', () => { settings = { ...DEFAULTS }; saveSettings(); applyAllSettingsToUI(); rebuildGui(); });
       content.appendChild(resetBtn);
-      // numeric inputs for pos
+
       const posXLabel = document.createElement('div'); posXLabel.className = 'slider-label'; posXLabel.textContent = 'X (px)';
       const posXInput = document.createElement('input'); posXInput.id = 'bloxdi-posX'; posXInput.className = 'slider'; posXInput.type = 'number'; posXInput.value = settings.posX === null ? '' : settings.posX;
       posXInput.addEventListener('change', () => { const v = parseInt(posXInput.value, 10); if (!Number.isNaN(v)) { settings.centered = false; settings.posX = v; saveSettings(); applyAllSettingsToUI(); } });
@@ -658,15 +571,9 @@
     }
 
     if (category === 'Text colour') {
-      // Toggle gradient for island text
-      const textGradToggle = makeToggle('Text Gradient', !!settings.textGradientEnabled, (v) => {
-        settings.textGradientEnabled = v; saveSettings(); applyAllSettingsToUI();
-      });
-      content.appendChild(textGradToggle);
-      // Color pickers for text A/B
+      content.appendChild(makeToggle('Text Gradient', !!settings.textGradientEnabled, (v) => { settings.textGradientEnabled = v; saveSettings(); applyAllSettingsToUI(); }));
       content.appendChild(makeColor('Text Color A', settings.textColorA, (v) => { settings.textColorA = v; saveSettings(); applyAllSettingsToUI(); }));
       content.appendChild(makeColor('Text Color B', settings.textColorB, (v) => { settings.textColorB = v; saveSettings(); applyAllSettingsToUI(); }));
-      // Also a fallback single text colour input
       const singleLabel = document.createElement('div'); singleLabel.className = 'slider-label'; singleLabel.textContent = 'Fallback Color';
       const singleInput = document.createElement('input'); singleInput.type = 'color'; singleInput.value = settings.textColor; singleInput.style.width = '100%'; singleInput.style.height = '30px';
       singleInput.addEventListener('input', () => { settings.textColor = singleInput.value; saveSettings(); applyAllSettingsToUI(); });
@@ -674,17 +581,11 @@
     }
 
     col.appendChild(content);
-
-    // collapse/expand toggle
     header.addEventListener('click', () => content.classList.toggle('hidden'));
-
-    // add draggable support to columns (header acts as handle)
     makeDraggable(col, header);
-
     gui.appendChild(col);
   }
 
-  // Make columns draggable (copied/adapted)
   function makeDraggable(elmnt, handle) {
     let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
     handle.style.cursor = 'move';
@@ -706,7 +607,7 @@
   }
 
   function rebuildGui() {
-    // simple approach: reload page to rebuild GUI cleanly after major reset/load
+    // reload to cleanly rebuild GUI when defaults restored or major changes
     window.location.reload();
   }
 
@@ -722,8 +623,42 @@
   /* ------------------------
      APPLY SETTINGS TO UI
      ------------------------ */
+  function applyTextColourStyles() {
+    if (settings.textGradientEnabled) {
+      const grad = `linear-gradient(90deg, ${settings.textColorA}, ${settings.textColorB})`;
+      title.style.background = grad;
+      title.style.webkitBackgroundClip = 'text';
+      title.style.backgroundClip = 'text';
+      title.style.color = 'transparent';
+      for (const el of subtitleRow.children) {
+        el.style.background = grad;
+        el.style.webkitBackgroundClip = 'text';
+        el.style.backgroundClip = 'text';
+        el.style.color = 'transparent';
+      }
+      smallDot.style.background = settings.textColorA;
+      iconEmoji.style.color = settings.textColorA;
+    } else {
+      title.style.background = 'none';
+      title.style.webkitBackgroundClip = 'unset';
+      title.style.backgroundClip = 'unset';
+      title.style.color = settings.textColor;
+      for (const el of subtitleRow.children) {
+        el.style.background = 'none';
+        el.style.webkitBackgroundClip = 'unset';
+        el.style.backgroundClip = 'unset';
+        el.style.color = settings.textColor;
+      }
+      smallDot.style.background = settings.textColor;
+      iconEmoji.style.color = settings.textColor;
+    }
+  }
+
   function applyAllSettingsToUI() {
-    root.style.display = settings.enabled ? 'block' : 'none';
+    // visibility
+    islandHost.style.display = settings.enabled ? 'block' : 'none';
+
+    // sizing & visuals
     island.style.width = `${settings.size}px`;
     island.style.height = `${settings.height}px`;
     island.style.borderRadius = `${settings.borderRadius}px`;
@@ -732,6 +667,7 @@
     island.style.opacity = `${settings.islandOpacity}`;
     island.style.color = settings.textColor;
     island.style.fontFamily = settings.fontFamily;
+
     iconWrap.style.width = `${settings.height - 16}px`;
     iconWrap.style.height = `${settings.height - 16}px`;
     iconWrap.style.borderRadius = `${Math.max(6, settings.borderRadius - 6)}px`;
@@ -747,14 +683,15 @@
     if (settings.iconUrl) {
       iconImg.src = settings.iconUrl; iconImg.style.display = 'block'; iconEmoji.style.display = 'none';
       iconImg.onerror = () => { iconImg.style.display = 'none'; iconEmoji.style.display = 'flex'; };
-    } else { iconImg.style.display = 'none'; iconEmoji.style.display = 'flex'; iconEmoji.style.color = settings.textColor; iconEmoji.textContent = settings.iconEmoji || DEFAULTS.iconEmoji; }
+    } else {
+      iconImg.style.display = 'none'; iconEmoji.style.display = 'flex'; iconEmoji.textContent = settings.iconEmoji || DEFAULTS.iconEmoji;
+    }
 
-    // Glow ring: radial gradient blurred (no spin)
+    // Glow ring (radial blur) - no rotation
     ring.style.width = `${settings.size + settings.gradientThickness * 2}px`;
     ring.style.height = `${settings.height + settings.gradientThickness * 2}px`;
     ring.style.borderRadius = `${settings.borderRadius + settings.gradientThickness}px`;
     if (settings.gradientEnabled) {
-      // create a soft glow using radial-gradient and blur
       ring.style.background = `radial-gradient(circle at 50% 50%, ${settings.colorA} 0%, ${settings.colorB} 55%, rgba(0,0,0,0) 70%)`;
       ring.style.filter = `blur(${Math.max(6, settings.gradientThickness)}px)`;
       ring.style.opacity = '0.92';
@@ -764,81 +701,44 @@
       ring.style.opacity = '0';
     }
 
-    // Text colouring: either gradient text or fallback single color
+    // Text colours
     applyTextColourStyles();
 
+    // float animation (keeps css animation defined earlier)
     if (settings.floatAnimation) island.classList.add('float-anim'); else island.classList.remove('float-anim');
-    island.style.color = settings.textColor;
-    buildDynamicStyles(); // rebuild CSS for animation values
+
+    // position
     applyPositionToRoot();
+
+    // ensure ping+ram loops started and arraylist updated
     startPingLoop();
     updateArrayList();
   }
 
-  function applyTextColourStyles() {
-    // Title uses gradient if enabled, otherwise a solid fallback color
-    if (settings.textGradientEnabled) {
-      const grad = `linear-gradient(90deg, ${settings.textColorA}, ${settings.textColorB})`;
-      title.style.background = grad;
-      title.style.webkitBackgroundClip = 'text';
-      title.style.backgroundClip = 'text';
-      title.style.color = 'transparent';
-
-      // apply gradient/clipped text to subtitle items
-      for (const el of subtitleRow.children) {
-        el.style.background = grad;
-        el.style.webkitBackgroundClip = 'text';
-        el.style.backgroundClip = 'text';
-        el.style.color = 'transparent';
-      }
-      // small dot keep original color (use first gradient color)
-      smallDot.style.background = settings.textColorA;
-    } else {
-      title.style.background = 'none';
-      title.style.webkitBackgroundClip = 'unset';
-      title.style.backgroundClip = 'unset';
-      title.style.color = settings.textColor;
-
-      for (const el of subtitleRow.children) {
-        el.style.background = 'none';
-        el.style.webkitBackgroundClip = 'unset';
-        el.style.backgroundClip = 'unset';
-        el.style.color = settings.textColor;
-      }
-      smallDot.style.background = settings.textColor;
-    }
-  }
-
-  function buildDynamicStyles() {
-    // Nothing additional needed beyond the existing styleTag content for this script
-  }
-
   /* ------------------------
-     LIFECYCLE START
+     Starts
      ------------------------ */
-  buildDynamicStyles();
   applyAllSettingsToUI();
-  // start metrics loops
   rafId = requestAnimationFrame(tickFPS);
   startPingLoop();
   setInterval(updateSessionTime, 1000);
   setInterval(updateRAM, 1200);
   updateRAM();
 
-  // smallDot color refresh (ensure matches text color settings)
+  // Refresh small dot color (soo useless idk why i need it)
   setInterval(() => {
     smallDot.style.background = settings.textGradientEnabled ? settings.textColorA : settings.textColor;
   }, 1000);
 
-  // Periodically refresh side stats so CPU/RAM shown next to arraylist stay current
+  // Periodically refresh side stats text (if present)
   setInterval(() => {
-    const arrCpu = document.getElementById('bloxdi-array-cpu');
-    if (arrCpu) arrCpu.textContent = settings.showCPU ? `CPU: ${cpuPercent}%` : '';
-    const arrRam = document.getElementById('bloxdi-array-ram');
-    if (arrRam) arrRam.textContent = settings.showRAM ? `RAM: ${lastRamText}` : '';
+    const arrCpu = root.querySelector('#bloxdi-array-cpu');
+    if (arrCpu && settings.showCPU) arrCpu.textContent = `CPU: ${cpuPercent}%`;
+    const arrRam = root.querySelector('#bloxdi-array-ram');
+    if (arrRam && settings.showRAM) arrRam.textContent = `RAM: ${lastRamText}`;
   }, 800);
 
-  // expose for debug
+  // Expose debug API
   window.bloxdi = {
     getSettings: () => ({ ...settings }),
     setSettings: (s) => { settings = { ...settings, ...s }; saveSettings(); applyAllSettingsToUI(); },
@@ -846,16 +746,19 @@
     closeGui: () => gui.classList.add('hidden')
   };
 
-  // clean up on unload
-  window.addEventListener('beforeunload', () => { cancelAnimationFrame(rafId); if (pingTimer) clearInterval(pingTimer); });
+  window.addEventListener('beforeunload', () => {
+    cancelAnimationFrame(rafId);
+    if (pingTimer) clearInterval(pingTimer);
+  });
 
-  // initial text placeholders
+  // Initial placeholders
   fpsEl.textContent = 'FPS: --';
   pingEl.textContent = 'Ping: --';
   cpuEl.textContent = 'CPU: --%';
   ramEl.textContent = 'RAM: --';
   timeEl.textContent = 'Time: 0s';
   updateArrayList();
-// too many comments :sob: :pray:
+
+  //   Soo many comments :sob: :pray:
 
 })();
