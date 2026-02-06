@@ -17,7 +17,12 @@ A dynamic island for Bloxd.io. Has a clickgui (open with Right shift). IDK why I
 3. Copy the contents, then make a new userscript from Tamper/Vio
 4. Paste the content, then on the top left, press 'File' then press 'Save'
 5. Open Bloxd.io in your browser.  
-6. Press **Right Shift** to open the ClickGUI.  
+6. Press **Right Shift** to open the ClickGUI.
+
+Video (Sorry for low quality, my screens max res is 1366x768 ☠️
+
+https://github.com/user-attachments/assets/5c9fdfa1-3674-4014-b4ac-f18bc4f64e6f
+
 
 Will release visual tutorial on how to do this on my YT channel: https://www.youtube.com/@blatantbloxdplayer
 
