@@ -19,7 +19,7 @@ A dynamic island for Bloxd.io. Has a clickgui (open with Right shift). IDK why I
 5. Open Bloxd.io in your browser.  
 6. Press **Right Shift** to open the ClickGUI.
 
-Video (Sorry for low quality, my screens max res is 1366x768 ☠️
+Video of what the dynamic island looks like. Sorry for low quality, my screens max res is 1366x768 ☠️(The dynamic island is **NOT** blurry btw, thats just my screen)
 
 https://github.com/user-attachments/assets/5c9fdfa1-3674-4014-b4ac-f18bc4f64e6f
 
