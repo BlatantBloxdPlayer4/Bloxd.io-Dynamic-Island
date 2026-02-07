@@ -21,6 +21,9 @@ A dynamic island for Bloxd.io. Has a clickgui (open with Right shift). IDK why I
 
 Video of what the dynamic island looks like. Sorry for low quality, my screens max res is 1366x768 ☠️(The dynamic island is **NOT** blurry btw, thats just my screen)
 
+https://github.com/user-attachments/assets/438d9bb2-2f75-4077-9544-f02a55d7daea
+
+
 
 Will release visual tutorial on how to do this on my YT channel: https://www.youtube.com/@blatantbloxdplayer
 
