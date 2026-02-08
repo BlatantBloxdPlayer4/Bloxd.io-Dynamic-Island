@@ -14,7 +14,7 @@
   // Storage key
   const STORAGE_KEY = 'bloxddynamicisland_settings_v1';
 
-  // Defaults
+  
   const DEFAULTS = {
     enabled: true,
     showFPS: true,
@@ -69,19 +69,18 @@
 
   let settings = loadSettings();
 
-  // Create a host element and attach an open Shadow DOM so our UI and CSS are isolated from any injected client.
+  
   const host = document.createElement('div');
   host.id = 'bloxdi-host';
-  // Keep the host out of the way visually. The actual UI will live in the shadow root.
   host.style.position = 'fixed';
   host.style.inset = '0px';
-  host.style.pointerEvents = 'none'; // allow through by default; actual UI elements override pointerEvents locally
-  host.style.zIndex = '2147483646'; // very high but still below browser UI; adjustable if needed
+  host.style.pointerEvents = 'none'; 
+  host.style.zIndex = '2147483646'; 
   document.documentElement.appendChild(host);
 
   const shadow = host.attachShadow({ mode: 'open' });
 
-  // Build style (scoped inside shadow DOM)
+  
   const styleEl = document.createElement('style');
   styleEl.textContent = `
     :host { all: initial; } /* reset inherited properties for robustness */
@@ -168,12 +167,12 @@
   `;
   shadow.appendChild(styleEl);
 
-  // Container inside shadow
+  
   const root = document.createElement('div');
   root.className = 'bloxdi-root';
   shadow.appendChild(root);
 
-  // Island host (for positioning)
+  
   const islandHost = document.createElement('div');
   islandHost.className = 'bloxdi-island-host';
   // initial positioning - will be applied by applyPositionToRoot()
@@ -182,7 +181,7 @@
   islandHost.style.transform = 'translateX(-50%)';
   root.appendChild(islandHost);
 
-  // Island element
+  
   const island = document.createElement('div');
   island.className = 'bloxdi-island';
   island.style.width = `${settings.size}px`;
@@ -193,7 +192,7 @@
   island.style.opacity = `${settings.islandOpacity}`;
   islandHost.appendChild(island);
 
-  // Glow ring
+  
   const ring = document.createElement('div');
   ring.className = 'bloxdi-ring';
   ring.style.width = `${settings.size + settings.gradientThickness * 2}px`;
@@ -201,7 +200,7 @@
   ring.style.borderRadius = `${settings.borderRadius + settings.gradientThickness}px`;
   islandHost.appendChild(ring);
 
-  // Left / center / right
+  
   const left = document.createElement('div'); left.className = 'bloxdi-left'; island.appendChild(left);
   const iconWrap = document.createElement('div'); iconWrap.className = 'bloxdi-iconwrap'; iconWrap.style.width = `${settings.height - 16}px`; iconWrap.style.height = `${settings.height - 16}px`; left.appendChild(iconWrap);
   const iconImg = document.createElement('img'); iconImg.style.maxWidth = '100%'; iconImg.style.maxHeight = '100%'; iconImg.style.objectFit = 'cover'; iconImg.style.display = 'none'; iconWrap.appendChild(iconImg);
@@ -220,7 +219,7 @@
   const right = document.createElement('div'); right.className = 'bloxdi-right'; island.appendChild(right);
   const smallDot = document.createElement('div'); smallDot.className = 'bloxdi-smalldot'; right.appendChild(smallDot);
 
-  // ClickGUI and arraylist inside shadow
+  
   const gui = document.createElement('div');
   gui.className = 'fake-gui hidden';
   root.appendChild(gui);
@@ -418,7 +417,7 @@
   window.addEventListener('pointercancel', endDrag);
 
   /* ------------------------
-     ClickGUI build (scoped inside shadow root)
+     ClickGUI build
      ------------------------ */
 
   // Helper factories
@@ -497,7 +496,7 @@
     "Text colour": ["Text Gradient", "Text Color A", "Text Color B"]
   };
 
-  // Build GUI columns
+  
   let xOffset = 0;
   for (const [category, items] of Object.entries(columns)) {
     const col = document.createElement('div');
@@ -607,11 +606,10 @@
   }
 
   function rebuildGui() {
-    // reload to cleanly rebuild GUI when defaults restored or major changes
     window.location.reload();
   }
 
-  // Toggle GUI with Right Shift
+  
   window.addEventListener('keydown', function(e) {
     if (e.code === 'ShiftRight') {
       e.preventDefault();
@@ -655,10 +653,9 @@
   }
 
   function applyAllSettingsToUI() {
-    // visibility
     islandHost.style.display = settings.enabled ? 'block' : 'none';
 
-    // sizing & visuals
+    
     island.style.width = `${settings.size}px`;
     island.style.height = `${settings.height}px`;
     island.style.borderRadius = `${settings.borderRadius}px`;
@@ -687,7 +684,7 @@
       iconImg.style.display = 'none'; iconEmoji.style.display = 'flex'; iconEmoji.textContent = settings.iconEmoji || DEFAULTS.iconEmoji;
     }
 
-    // Glow ring (radial blur) - no rotation
+    
     ring.style.width = `${settings.size + settings.gradientThickness * 2}px`;
     ring.style.height = `${settings.height + settings.gradientThickness * 2}px`;
     ring.style.borderRadius = `${settings.borderRadius + settings.gradientThickness}px`;
@@ -701,16 +698,16 @@
       ring.style.opacity = '0';
     }
 
-    // Text colours
+    
     applyTextColourStyles();
 
-    // float animation (keeps css animation defined earlier)
+    
     if (settings.floatAnimation) island.classList.add('float-anim'); else island.classList.remove('float-anim');
 
-    // position
+    
     applyPositionToRoot();
 
-    // ensure ping+ram loops started and arraylist updated
+    
     startPingLoop();
     updateArrayList();
   }
@@ -725,12 +722,12 @@
   setInterval(updateRAM, 1200);
   updateRAM();
 
-  // Refresh small dot color (soo useless idk why i need it)
+  
   setInterval(() => {
     smallDot.style.background = settings.textGradientEnabled ? settings.textColorA : settings.textColor;
   }, 1000);
 
-  // Periodically refresh side stats text (if present)
+  
   setInterval(() => {
     const arrCpu = root.querySelector('#bloxdi-array-cpu');
     if (arrCpu && settings.showCPU) arrCpu.textContent = `CPU: ${cpuPercent}%`;
@@ -738,7 +735,7 @@
     if (arrRam && settings.showRAM) arrRam.textContent = `RAM: ${lastRamText}`;
   }, 800);
 
-  // Expose debug API
+  
   window.bloxdi = {
     getSettings: () => ({ ...settings }),
     setSettings: (s) => { settings = { ...settings, ...s }; saveSettings(); applyAllSettingsToUI(); },
@@ -751,7 +748,7 @@
     if (pingTimer) clearInterval(pingTimer);
   });
 
-  // Initial placeholders
+  
   fpsEl.textContent = 'FPS: --';
   pingEl.textContent = 'Ping: --';
   cpuEl.textContent = 'CPU: --%';
@@ -759,6 +756,6 @@
   timeEl.textContent = 'Time: 0s';
   updateArrayList();
 
-  //   Soo many comments :sob: :pray:
+  //   Did I cook? IDK
 
 })();
